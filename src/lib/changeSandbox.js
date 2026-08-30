@@ -63,7 +63,8 @@ export function applyOperations(data, operations) {
         const entity = ENTITY_BY_OBJTYPE[op.object_type];
         if (!entity) return;
         const r = (proposed[entity] || []).find((x) => x.id === op.object_id);
-        if (r) r.lifecycle_state = op.lifecycle;
+        // Workload/Environment use `lifecycle`; Node/NetworkDevice/Storage use `lifecycle_state`.
+        if (r) r[(op.object_type === "workload" || op.object_type === "environment") ? "lifecycle" : "lifecycle_state"] = op.lifecycle;
         break;
       }
       case "ADD_STORAGE": {
@@ -99,9 +100,10 @@ function findingKey(f) { return `${f.code}|${f.affected_type || ""}|${f.affected
 export function analyzeChange(data, change) {
   const operations = change.operations || [];
   const before = runHealthChecks(data);
+  let proposed = null;
   let after = [];
   let applyError = null;
-  try { const proposed = applyOperations(data, operations); after = runHealthChecks(proposed); }
+  try { proposed = applyOperations(data, operations); after = runHealthChecks(proposed); }
   catch (e) { applyError = e.message; }
   if (applyError) return { error: applyError, before, after: [], operations, newFindings: [], resolvedFindings: [], unchanged: [], resourceDelta: [], unknownImpacts: [], rollbackTarget: change.rollback_strategy || null };
 
@@ -122,11 +124,8 @@ export function analyzeChange(data, change) {
     const n = (data.Node || []).find((x) => x.id === nid);
     if (!n) return;
     const beforeAlloc = nodeAllocations(n, data.Workload || [], data.ExecutionEnvironment || []);
-    const nP = { ...n, lifecycle_state: (operations.find((o) => o.type === "RETIRE_NODE" && (o.node_id === nid)) ? "retired" : n.lifecycle_state) };
-    const afterAlloc = nodeAllocations(nP, (data.Workload || []), (data.ExecutionEnvironment || []));
-    // recompute after with proposed data for accuracy
-    const afterAlloc2 = nodeAllocations(n, (applyOperations(data, operations).Workload || []), (applyOperations(data, operations).ExecutionEnvironment || []));
-    resourceDelta.push({ node: n, before: beforeAlloc, after: afterAlloc2, ramDelta: afterAlloc2.ram - beforeAlloc.ram, cpuDelta: afterAlloc2.cpu - beforeAlloc.cpu });
+    const afterAlloc = nodeAllocations(n, proposed.Workload || [], proposed.ExecutionEnvironment || []);
+    resourceDelta.push({ node: n, before: beforeAlloc, after: afterAlloc, ramDelta: afterAlloc.ram - beforeAlloc.ram, cpuDelta: afterAlloc.cpu - beforeAlloc.cpu });
   });
 
   const unknownImpacts = operations

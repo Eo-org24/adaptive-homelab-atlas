@@ -4,6 +4,8 @@ import { base44 } from "@/api/base44Client";
 import { ENTITY_KINDS, REF_FIELDS, DEP_TYPE_MAP, refFieldNames, buildLookups, resolveRef } from "@/lib/relationships";
 
 const SUPPORTED_PREFIX = "adaptive-homelab-atlas/v";
+const SUPPORTED_MAJOR = 1;
+const SCHEMA_RE = /^adaptive-homelab-atlas\/v(\d+)/;
 
 // envelope section name -> entity kind
 export const ENVELOPE_SECTIONS = {
@@ -22,8 +24,12 @@ export function validateEnvelope(envelope) {
   const errors = [];
   if (!envelope || typeof envelope !== "object" || Array.isArray(envelope)) return { valid: false, errors: ["Envelope is not a JSON object."] };
   if (!envelope.schema_version) errors.push("Missing schema_version.");
-  else if (typeof envelope.schema_version !== "string" || !envelope.schema_version.startsWith(SUPPORTED_PREFIX))
-    errors.push(`Unsupported schema_version "${envelope.schema_version}" — expected prefix "${SUPPORTED_PREFIX}".`);
+  else if (typeof envelope.schema_version !== "string") errors.push("schema_version must be a string.");
+  else {
+    const m = envelope.schema_version.match(SCHEMA_RE);
+    if (!m) errors.push(`Unsupported schema_version "${envelope.schema_version}" — expected prefix "${SUPPORTED_PREFIX}".`);
+    else if (Number(m[1]) !== SUPPORTED_MAJOR) errors.push(`Unsupported schema major version v${m[1]} — supported major version is v${SUPPORTED_MAJOR}.`);
+  }
   return { valid: errors.length === 0, errors };
 }
 
@@ -55,6 +61,7 @@ export function previewImport(envelope, data) {
     if (!Array.isArray(list)) return;
     plans[entity] = [];
     list.forEach((rec, idx) => {
+      if (!rec || typeof rec !== "object") { report.failed.push({ entity, index: idx, reason: "null or non-object record" }); return; }
       const cid = rec.canonical_id;
       if (!cid) { report.failed.push({ entity, index: idx, reason: "missing canonical_id" }); return; }
       if (seen.has(cid)) { report.conflicts.push({ canonical_id: cid, first: seen.get(cid), duplicate: [section, idx] }); return; }

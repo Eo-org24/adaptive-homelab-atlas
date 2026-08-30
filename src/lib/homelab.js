@@ -186,6 +186,7 @@ export function exportCSV(records, columns, name) {
 export function detectCycles(deps) {
   const adj = {};
   deps.forEach((d) => {
+    if (!d) return;
     if (d.source_type === "workload" && d.target_type === "workload") {
       (adj[d.source_id] = adj[d.source_id] || []).push(d.target_id);
     }
@@ -257,11 +258,11 @@ export function resourceShortages(workloads, nodes, environments, pools) {
 
 // Workloads directly hosted on a node WITHOUT a containing environment on that node (legacy/compat).
 export function directHostedWorkloads(node, workloads, environments) {
-  const envById = new Map((environments || []).map((e) => [e.id, e]));
+  // A workload is direct-hosted only when it has NO environment relationship.
+  // Env-hosted workloads (resolved or with a missing env) are not direct-hosted.
   return (workloads || []).filter((w) => {
-    if (w.current_host !== node.id) return false;
-    const env = w.current_environment ? envById.get(w.current_environment) : null;
-    return !env || env.current_host !== node.id;
+    if (w.current_environment) return false;
+    return w.current_host === node.id;
   });
 }
 
@@ -277,9 +278,15 @@ export function nodeAllocations(node, workloads, environments) {
     storage += e.storage_allocation_gb || 0;
   });
   (workloads || []).forEach((w) => {
-    if (w.current_host !== node.id) return;
     const env = w.current_environment ? envById.get(w.current_environment) : null;
-    if (env && env.current_host === node.id) return; // counted via env reservation
+    if (w.current_environment) {
+      // Environment-authoritative: realized on its environment's host, counted via reservation.
+      if (!env) return; // referenced env missing -> unresolved, do not attribute to a stale host
+      if (env.current_host !== node.id) return; // realized on a different node
+      return; // counted via its environment's reservation above
+    }
+    // Legacy direct-hosted (no environment relationship)
+    if (w.current_host !== node.id) return;
     cpu += w.cpu_requirement || 0;
     ram += w.ram_requirement_gb || 0;
     vram += w.gpu_vram_requirement_gb || 0;

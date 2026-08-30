@@ -21,6 +21,10 @@ function nameOf(list, id, key) {
 }
 
 export function runHealthChecks(data) {
+  // Harden against null / non-object records so malformed input fails safely.
+  const clean = {};
+  Object.keys(data || {}).forEach((k) => { clean[k] = Array.isArray(data[k]) ? data[k].filter((v) => v && typeof v === "object") : data[k]; });
+  data = clean;
   const nodes = data.Node || [];
   const workloads = data.Workload || [];
   const envs = data.ExecutionEnvironment || [];

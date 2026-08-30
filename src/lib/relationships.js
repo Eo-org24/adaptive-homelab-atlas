@@ -70,10 +70,15 @@ export function resolveRef(targetKind, value, lookups) {
 // Legacy workload.current_host is only a fallback for records without an environment.
 export function workloadPhysicalNode(workload, envs, nodes) {
   if (!workload) return null;
-  const env = workload.current_environment ? (envs || []).find((e) => e.id === workload.current_environment) : null;
-  if (env && env.current_host) {
-    return (nodes || []).find((n) => n.id === env.current_host) || null;
+  // Environment is authoritative. A referenced-but-missing environment means the
+  // workload is unresolved — do NOT silently fall back to a stale legacy current_host.
+  if (workload.current_environment) {
+    const env = (envs || []).find((e) => e.id === workload.current_environment);
+    if (!env) return null;
+    if (env.current_host) return (nodes || []).find((n) => n.id === env.current_host) || null;
+    return null;
   }
+  // Legacy fallback: only when no environment relationship exists.
   if (workload.current_host) return (nodes || []).find((n) => n.id === workload.current_host) || null;
   return null;
 }
