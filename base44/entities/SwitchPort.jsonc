@@ -6,10 +6,6 @@
       "type": "string",
       "title": "Device (id)"
     },
-    "device_name": {
-      "type": "string",
-      "title": "Device name"
-    },
     "port_identifier": {
       "type": "string",
       "title": "Port identifier"

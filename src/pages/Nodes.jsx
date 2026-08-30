@@ -2,6 +2,7 @@ import React, { useMemo } from "react";
 import EntityCrudPage from "@/components/EntityCrudPage";
 import { useAllEntities } from "@/hooks/useEntities";
 import { RelatedList, SpecGrid, Section } from "@/components/Related";
+import MaintenanceList from "@/components/MaintenanceList";
 import { fmtGB, lifecycleTone, badgeClass, StatusBadge, fmtDate } from "@/lib/homelab";
 
 const COLUMNS = [
@@ -15,7 +16,7 @@ const COLUMNS = [
 ];
 
 export default function Nodes() {
-  const { data } = useAllEntities(["Workload", "ExecutionEnvironment", "StorageDevice", "Maintenance", "Decision", "PlannedChange", "Dependency"]);
+  const { data } = useAllEntities(["Node", "Workload", "ExecutionEnvironment", "StorageDevice", "NetworkDevice", "Maintenance", "Decision", "PlannedChange", "Dependency"]);
   const workloads = data.Workload || [];
   const envs = data.ExecutionEnvironment || [];
   const storage = data.StorageDevice || [];
@@ -57,7 +58,7 @@ export default function Nodes() {
         <RelatedList items={storage.filter((s) => s.current_node === n.id)} route="/storage" label={(s) => `${s.model} · ${fmtGB(s.capacity_gb)}`} sub={(s) => s.media_type} status={(s) => s.health} goTo={goTo} />
       </Section>
       <Section title="Maintenance history">
-        <RelatedList items={maintenance.filter((m) => m.target_id === n.id)} route="/maintenance" label={(m) => `${m.type} — ${m.target_name}`} sub={(m) => fmtDate(m.timestamp)} status={(m) => m.outcome} goTo={goTo} emptyMsg="No maintenance logged" />
+        <MaintenanceList items={maintenance.filter((m) => m.target_id === n.id)} data={data} goTo={goTo} emptyMsg="No maintenance logged" />
       </Section>
       <Section title="Related decisions">
         <RelatedList items={decisions.filter((d) => (d.related_nodes || []).includes(n.id))} route="/decisions" label={(d) => `${d.decision_id} · ${d.title}`} status={(d) => d.status} goTo={goTo} />

@@ -10,10 +10,6 @@
       "type": "string",
       "title": "Node (id)"
     },
-    "node_name": {
-      "type": "string",
-      "title": "Node name"
-    },
     "device_ids": {
       "type": "array",
       "title": "Participating devices",

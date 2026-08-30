@@ -3,7 +3,7 @@ import EntityCrudPage from "@/components/EntityCrudPage";
 import { useAllEntities } from "@/hooks/useEntities";
 import { RelatedList, SpecGrid, Section } from "@/components/Related";
 import RefByType, { TypeSelect } from "@/components/RefByType";
-import { fmtDate, lifecycleTone, criticalityTone, StatusBadge } from "@/lib/homelab";
+import { fmtDate, lifecycleTone, criticalityTone, StatusBadge, typedRefName } from "@/lib/homelab";
 
 const VIEWS = [
   { key: "all", label: "All" },
@@ -57,6 +57,11 @@ export default function Tasks() {
     ),
   };
 
+  const enrich = useMemo(() => (t) => ({
+    ...t,
+    related_object_name: typedRefName(t.related_object_type, t.related_object_id, data),
+  }), [data]);
+
   const detailRender = (t, { goTo }) => (
     <div className="space-y-4">
       <SpecGrid fields={[
@@ -109,7 +114,7 @@ export default function Tasks() {
           { label: "Target", get: (r) => r.target_date },
         ]}
         fieldOverrides={fieldOverrides}
-        hidden={["related_object_name"]}
+        enrich={enrich}
         detailRender={detailRender}
       />
     </div>

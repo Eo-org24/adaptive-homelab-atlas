@@ -100,6 +100,32 @@ export function fmtGB(gb) {
   return `${Math.round(gb)} GB`;
 }
 
+// ---------- Reference resolution (relational model) ----------
+// Resolve a canonical record's display name by id, live.
+export function refName(list, id, nameKey) {
+  if (!id || !list) return "";
+  const r = list.find((x) => x.id === id);
+  return r ? (r[nameKey] || "") : "";
+}
+
+// Resolve a typed reference (Dependency/Maintenance/Task) to a display name.
+// `data` is the aggregated entity map from useAllEntities.
+export function typedRefName(type, id, data) {
+  if (!id || !data) return "";
+  const map = {
+    node: { list: data.Node, key: "hostname" },
+    workload: { list: data.Workload, key: "name" },
+    environment: { list: data.ExecutionEnvironment, key: "name" },
+    network_device: { list: data.NetworkDevice, key: "name" },
+    network_service: { list: data.NetworkDevice, key: "name" },
+    storage: { list: data.StorageDevice, key: "model" },
+    change: { list: data.PlannedChange, key: "title" },
+    decision: { list: data.Decision, key: "title" },
+  };
+  const m = map[type];
+  return m ? refName(m.list, id, m.key) : "";
+}
+
 export function fmtDate(d) {
   if (!d) return "—";
   try { return new Date(d).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }); }
@@ -329,7 +355,7 @@ export async function globalSearch(query) {
     { entity: "StoragePool", label: "Storage pool", nameKey: "name", route: "/storage-pools" },
     { entity: "PlannedChange", label: "Change", nameKey: "title", route: "/change-planner" },
     { entity: "Decision", label: "Decision", nameKey: "title", route: "/decisions" },
-    { entity: "Maintenance", label: "Maintenance", nameKey: "target_name", route: "/maintenance" },
+    { entity: "Maintenance", label: "Maintenance", nameFn: (r) => `${r.type} — ${r.description || (r.target_id || "").slice(-6) || "record"}`, route: "/maintenance" },
     { entity: "Task", label: "Task", nameKey: "task", route: "/tasks" },
   ];
   const results = await Promise.all(targets.map(async (t) => {
@@ -337,12 +363,12 @@ export async function globalSearch(query) {
       const recs = await base44.entities[t.entity].list("-updated_date", 200);
       return recs
         .filter((r) => {
-          const name = (r[t.nameKey] || "").toLowerCase();
+          const name = (t.nameFn ? t.nameFn(r) : r[t.nameKey] || "").toLowerCase();
           const desc = (r.description || r.notes || r.title || "").toLowerCase();
           return name.includes(q) || desc.includes(q);
         })
         .slice(0, 6)
-        .map((r) => ({ entity: t.label, route: t.route, id: r.id, name: r[t.nameKey], sub: r.description || r.hostname || r.target_name || "" }));
+        .map((r) => ({ entity: t.label, route: t.route, id: r.id, name: t.nameFn ? t.nameFn(r) : r[t.nameKey], sub: r.description || r.hostname || "" }));
     } catch { return []; }
   }));
   return results.flat();

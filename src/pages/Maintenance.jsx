@@ -3,7 +3,7 @@ import EntityCrudPage from "@/components/EntityCrudPage";
 import { useAllEntities } from "@/hooks/useEntities";
 import { RelatedList, SpecGrid, Section } from "@/components/Related";
 import RefByType, { TypeSelect } from "@/components/RefByType";
-import { fmtDate, fmtDateTime, outcomeTone, StatusBadge } from "@/lib/homelab";
+import { fmtDate, fmtDateTime, outcomeTone, StatusBadge, typedRefName } from "@/lib/homelab";
 
 const COLUMNS = [
   { key: "type", label: "Type", render: (r) => <span className="capitalize text-xs">{r.type}</span> },
@@ -38,6 +38,11 @@ export default function Maintenance() {
         label={label} isReq={isReq} />
     ),
   };
+
+  const enrich = useMemo(() => (m) => ({
+    ...m,
+    target_name: typedRefName(m.target_type, m.target_id, data),
+  }), [data]);
 
   const detailRender = (m, { goTo }) => (
     <div className="space-y-4">
@@ -79,7 +84,7 @@ export default function Maintenance() {
         { label: "Description", get: (r) => r.description },
       ]}
       fieldOverrides={fieldOverrides}
-      hidden={["target_name"]}
+      enrich={enrich}
       detailRender={detailRender}
     />
   );

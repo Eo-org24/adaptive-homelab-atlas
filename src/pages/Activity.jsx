@@ -2,11 +2,11 @@ import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAllEntities } from "@/hooks/useEntities";
 import { PageHeader, Card, EmptyState } from "@/components/ui-bits";
-import { fmtDateTime, timeAgo, lifecycleTone, StatusBadge } from "@/lib/homelab";
+import { fmtDateTime, timeAgo, lifecycleTone, StatusBadge, typedRefName } from "@/lib/homelab";
 import { Server, Boxes, GitBranch, Wrench, ListTodo, Scale, HardDrive, Network } from "lucide-react";
 
 const SOURCES = [
-  { entity: "Maintenance", label: "Maintenance", icon: Wrench, route: "/maintenance", name: (r) => `${r.type} — ${r.target_name}`, date: (r) => r.timestamp || r.updated_date, status: (r) => r.outcome, tone: (r) => r.outcome === "success" ? "emerald" : r.outcome === "failed" ? "rose" : "amber" },
+  { entity: "Maintenance", label: "Maintenance", icon: Wrench, route: "/maintenance", name: (r, data) => `${r.type} — ${typedRefName(r.target_type, r.target_id, data) || "—"}`, date: (r) => r.timestamp || r.updated_date, status: (r) => r.outcome, tone: (r) => r.outcome === "success" ? "emerald" : r.outcome === "failed" ? "rose" : "amber" },
   { entity: "PlannedChange", label: "Change", icon: GitBranch, route: "/change-planner", name: (r) => r.title, date: (r) => r.updated_date, status: (r) => r.status, tone: (r) => lifecycleTone(r.status) },
   { entity: "Task", label: "Task", icon: ListTodo, route: "/tasks", name: (r) => r.task, date: (r) => r.updated_date, status: (r) => r.status, tone: (r) => lifecycleTone(r.status) },
   { entity: "Decision", label: "Decision", icon: Scale, route: "/decisions", name: (r) => `${r.decision_id} — ${r.title}`, date: (r) => r.date || r.updated_date, status: (r) => r.status, tone: (r) => lifecycleTone(r.status) },
@@ -17,7 +17,7 @@ const SOURCES = [
 ];
 
 export default function Activity() {
-  const { data, loading } = useAllEntities(SOURCES.map((s) => s.entity));
+  const { data, loading } = useAllEntities([...new Set([...SOURCES.map((s) => s.entity), "ExecutionEnvironment"])]);
   const [type, setType] = useState("all");
   const navigate = useNavigate();
 
@@ -25,7 +25,7 @@ export default function Activity() {
     const items = [];
     SOURCES.forEach((s) => {
       (data[s.entity] || []).forEach((r) => {
-        items.push({ ...r, _type: s.label, _route: s.route, _icon: s.icon, _name: s.name(r), _date: s.date(r), _status: s.status(r), _tone: s.tone(r) });
+        items.push({ ...r, _type: s.label, _route: s.route, _icon: s.icon, _name: s.name(r, data), _date: s.date(r), _status: s.status(r), _tone: s.tone(r) });
       });
     });
     return items.sort((a, b) => new Date(b._date || b.updated_date || 0) - new Date(a._date || a.updated_date || 0));

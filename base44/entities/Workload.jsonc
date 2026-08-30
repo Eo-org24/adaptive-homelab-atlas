@@ -32,25 +32,13 @@
       "type": "string",
       "title": "Current execution environment (id)"
     },
-    "current_environment_name": {
-      "type": "string",
-      "title": "Current environment name"
-    },
     "current_host": {
       "type": "string",
       "title": "Current host node (id)"
     },
-    "current_host_name": {
-      "type": "string",
-      "title": "Current host name"
-    },
     "preferred_node": {
       "type": "string",
       "title": "Preferred node (id)"
-    },
-    "preferred_node_name": {
-      "type": "string",
-      "title": "Preferred node name"
     },
     "eligible_alternative_nodes": {
       "type": "array",

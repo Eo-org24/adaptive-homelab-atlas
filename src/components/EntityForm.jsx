@@ -143,10 +143,13 @@ export default function EntityForm({ entityName, initial, onSubmit, onCancel, re
 }
 
 function cleanValue(v, props) {
-  const out = { ...v };
-  Object.keys(out).forEach((k) => {
+  // Persist only schema-defined fields — drops resolved display fields added
+  // by enrichment so we never write duplicated display data back to the store.
+  const out = {};
+  Object.keys(props).forEach((k) => {
     const f = props[k];
-    if (f?.type === "number" && out[k] === "") out[k] = null;
+    if (f?.type === "number" && (v[k] === "" || v[k] === undefined)) out[k] = null;
+    else out[k] = v[k];
   });
   return out;
 }

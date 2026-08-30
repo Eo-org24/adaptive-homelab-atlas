@@ -24,10 +24,6 @@
       "type": "string",
       "title": "Current host node (id)"
     },
-    "current_host_name": {
-      "type": "string",
-      "title": "Current host name"
-    },
     "cpu_allocation": {
       "type": "number",
       "title": "CPU allocation (cores)"

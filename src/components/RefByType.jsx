@@ -22,10 +22,7 @@ export default function RefByType({ value, typeValue, idField, nameField, option
         <select
           className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
           value={value[idField] || ""}
-          onChange={(e) => {
-            const sel = opts.find((o) => o.value === e.target.value);
-            onChange({ [idField]: e.target.value, [nameField]: sel?.label || "" });
-          }}
+          onChange={(e) => onChange({ [idField]: e.target.value, [nameField]: "" })}
         >
           <option value="">—</option>
           {opts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}

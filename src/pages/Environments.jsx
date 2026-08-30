@@ -2,7 +2,8 @@ import React, { useMemo } from "react";
 import EntityCrudPage from "@/components/EntityCrudPage";
 import { useAllEntities } from "@/hooks/useEntities";
 import { RelatedList, SpecGrid, Section } from "@/components/Related";
-import { fmtGB, lifecycleTone, StatusBadge } from "@/lib/homelab";
+import MaintenanceList from "@/components/MaintenanceList";
+import { fmtGB, lifecycleTone, StatusBadge, refName } from "@/lib/homelab";
 
 const COLUMNS = [
   { key: "name", label: "Name", className: "font-medium" },
@@ -14,13 +15,18 @@ const COLUMNS = [
 ];
 
 export default function Environments() {
-  const { data } = useAllEntities(["Node", "Workload", "Maintenance"]);
+  const { data } = useAllEntities(["Node", "Workload", "ExecutionEnvironment", "StorageDevice", "NetworkDevice", "Maintenance"]);
   const nodes = data.Node || [];
   const workloads = data.Workload || [];
   const maintenance = data.Maintenance || [];
 
   const refOptions = useMemo(() => ({
     current_host: nodes.map((n) => ({ value: n.id, label: n.hostname })),
+  }), [nodes]);
+
+  const enrich = useMemo(() => (e) => ({
+    ...e,
+    current_host_name: refName(nodes, e.current_host, "hostname"),
   }), [nodes]);
 
   const detailRender = (e, { goTo }) => (
@@ -40,7 +46,7 @@ export default function Environments() {
         <RelatedList items={workloads.filter((w) => w.current_environment === e.id)} route="/workloads" label={(w) => w.name} sub={(w) => (w.category || "").replace(/_/g, " ")} status={(w) => w.lifecycle} tone={(w) => lifecycleTone(w.lifecycle)} goTo={goTo} />
       </Section>
       <Section title="Maintenance history">
-        <RelatedList items={maintenance.filter((m) => m.target_id === e.id)} route="/maintenance" label={(m) => `${m.type} — ${m.target_name}`} status={(m) => m.outcome} goTo={goTo} emptyMsg="No maintenance" />
+        <MaintenanceList items={maintenance.filter((m) => m.target_id === e.id)} data={data} goTo={goTo} emptyMsg="No maintenance" />
       </Section>
     </div>
   );
@@ -57,8 +63,7 @@ export default function Environments() {
         { key: "lifecycle", label: "Lifecycle", options: ["planned", "onboarding", "active", "experimental", "maintenance", "degraded", "retiring", "retired"].map((v) => ({ value: v })) },
       ]}
       refOptions={refOptions}
-      nameFields={{ current_host: "current_host_name" }}
-      hidden={["current_host_name"]}
+      enrich={enrich}
       exportColumns={[
         { label: "Name", get: (r) => r.name },
         { label: "Type", get: (r) => r.type },

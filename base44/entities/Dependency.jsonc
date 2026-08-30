@@ -16,10 +16,6 @@
       "type": "string",
       "title": "Source id"
     },
-    "source_name": {
-      "type": "string",
-      "title": "Source name"
-    },
     "target_type": {
       "type": "string",
       "title": "Target type",
@@ -39,7 +35,7 @@
     },
     "target_name": {
       "type": "string",
-      "title": "Target name"
+      "title": "Target name (external only)"
     },
     "kind": {
       "type": "string",

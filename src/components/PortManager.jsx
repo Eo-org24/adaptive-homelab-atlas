@@ -28,8 +28,9 @@ export default function PortManager({ device, ports, onRefresh }) {
   }, [devicePorts, filter]);
 
   const submit = async (vals) => {
-    if (editing.id) await base44.entities.SwitchPort.update(editing.id, { ...vals, device: device.id, device_name: device.name });
-    else await base44.entities.SwitchPort.create({ ...vals, device: device.id, device_name: device.name });
+    const payload = { ...vals, device: device.id };
+    if (editing.id) await base44.entities.SwitchPort.update(editing.id, payload);
+    else await base44.entities.SwitchPort.create(payload);
     setOpen(false); setEditing(null); onRefresh();
   };
 
@@ -78,7 +79,7 @@ export default function PortManager({ device, ports, onRefresh }) {
               initial={editing}
               onSubmit={submit}
               onCancel={() => { setOpen(false); setEditing(null); }}
-              hidden={["device", "device_name"]}
+              hidden={["device"]}
             />
           )}
         </DialogContent>

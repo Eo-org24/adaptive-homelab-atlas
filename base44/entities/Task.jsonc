@@ -50,10 +50,6 @@
       "type": "string",
       "title": "Related object id"
     },
-    "related_object_name": {
-      "type": "string",
-      "title": "Related object name"
-    },
     "status": {
       "type": "string",
       "title": "Status",

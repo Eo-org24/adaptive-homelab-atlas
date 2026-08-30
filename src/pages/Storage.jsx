@@ -2,7 +2,8 @@ import React, { useMemo } from "react";
 import EntityCrudPage from "@/components/EntityCrudPage";
 import { useAllEntities } from "@/hooks/useEntities";
 import { RelatedList, SpecGrid, Section } from "@/components/Related";
-import { fmtGB, fmtDate, badgeClass } from "@/lib/homelab";
+import MaintenanceList from "@/components/MaintenanceList";
+import { fmtGB, fmtDate, badgeClass, refName } from "@/lib/homelab";
 
 const HEALTH_TONE = { healthy: "emerald", warning: "amber", failing: "rose", unknown: "zinc", retired: "zinc" };
 const COLUMNS = [
@@ -16,13 +17,18 @@ const COLUMNS = [
 ];
 
 export default function Storage() {
-  const { data } = useAllEntities(["Node", "StoragePool", "Maintenance"]);
+  const { data } = useAllEntities(["Node", "Workload", "ExecutionEnvironment", "NetworkDevice", "StoragePool", "Maintenance"]);
   const nodes = data.Node || [];
   const pools = data.StoragePool || [];
   const maintenance = data.Maintenance || [];
 
   const refOptions = useMemo(() => ({
     current_node: nodes.map((n) => ({ value: n.id, label: n.hostname })),
+  }), [nodes]);
+
+  const enrich = useMemo(() => (s) => ({
+    ...s,
+    current_node_name: refName(nodes, s.current_node, "hostname"),
   }), [nodes]);
 
   const detailRender = (s, { goTo }) => {
@@ -51,7 +57,7 @@ export default function Storage() {
           <RelatedList items={devicePools} route="/storage-pools" label={(p) => p.name} sub={(p) => `${(p.raid_level || "").replace(/_/g, " ")} · ${fmtGB(p.usable_capacity_gb)}`} status={(p) => p.state} goTo={goTo} emptyMsg="Not in any pool" />
         </Section>
         <Section title="Maintenance history">
-          <RelatedList items={maintenance.filter((m) => m.target_id === s.id)} route="/maintenance" label={(m) => `${m.type} — ${m.target_name}`} sub={(m) => fmtDate(m.timestamp)} status={(m) => m.outcome} goTo={goTo} emptyMsg="No maintenance" />
+          <MaintenanceList items={maintenance.filter((m) => m.target_id === s.id)} data={data} goTo={goTo} emptyMsg="No maintenance" />
         </Section>
       </div>
     );
@@ -69,8 +75,7 @@ export default function Storage() {
         { key: "health", label: "Health", options: ["healthy", "warning", "failing", "unknown", "retired"].map((v) => ({ value: v })) },
       ]}
       refOptions={refOptions}
-      nameFields={{ current_node: "current_node_name" }}
-      hidden={["current_node_name"]}
+      enrich={enrich}
       exportColumns={[
         { label: "Manufacturer", get: (r) => r.manufacturer },
         { label: "Model", get: (r) => r.model },

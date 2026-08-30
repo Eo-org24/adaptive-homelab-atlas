@@ -50,10 +50,6 @@
       "type": "string",
       "title": "Current node (id)"
     },
-    "current_node_name": {
-      "type": "string",
-      "title": "Current node name"
-    },
     "physical_bay": {
       "type": "string",
       "title": "Physical bay / location"

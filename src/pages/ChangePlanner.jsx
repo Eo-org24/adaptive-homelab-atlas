@@ -4,7 +4,7 @@ import EntityCrudPage from "@/components/EntityCrudPage";
 import PlacementSimulator from "@/components/PlacementSimulator";
 import { useAllEntities } from "@/hooks/useEntities";
 import { RelatedList, SpecGrid, Section } from "@/components/Related";
-import { fmtDate, lifecycleTone, riskTone, StatusBadge, badgeClass } from "@/lib/homelab";
+import { fmtDate, lifecycleTone, riskTone, StatusBadge, badgeClass, refName } from "@/lib/homelab";
 import { AlertTriangle, GitBranch, Sliders } from "lucide-react";
 
 const STATUS_TONE = {
@@ -51,7 +51,7 @@ function ChangeDetail({ change, nodes, workloads, goTo }) {
           </div>
           <div className="px-3 py-2 bg-muted/40">
             <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Affected workloads ({affectedWorkloads.length})</div>
-            <RelatedList items={affectedWorkloads} route="/workloads" label={(w) => w.name} sub={(w) => `host: ${w.current_host_name || "—"}`} status={(w) => w.criticality} goTo={goTo} emptyMsg="None" />
+            <RelatedList items={affectedWorkloads} route="/workloads" label={(w) => w.name} sub={(w) => `host: ${refName(nodes, w.current_host, "hostname") || "—"}`} status={(w) => w.criticality} goTo={goTo} emptyMsg="None" />
           </div>
         </div>
       </Section>

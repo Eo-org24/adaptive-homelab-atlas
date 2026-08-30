@@ -3,7 +3,7 @@ import EntityCrudPage from "@/components/EntityCrudPage";
 import { useAllEntities } from "@/hooks/useEntities";
 import { SpecGrid, Section } from "@/components/Related";
 import RefByType, { TypeSelect } from "@/components/RefByType";
-import { StatusBadge } from "@/lib/homelab";
+import { StatusBadge, typedRefName } from "@/lib/homelab";
 
 const KIND_TONE = { hard: "rose", soft: "amber", optional: "zinc" };
 const COLUMNS = [
@@ -29,6 +29,12 @@ export default function Dependencies() {
     network_service: network.map((d) => ({ value: d.id, label: d.name })),
     storage: storage.map((s) => ({ value: s.id, label: `${s.model}` })),
   }), [nodes, workloads, envs, network, storage]);
+
+  const enrich = useMemo(() => (d) => ({
+    ...d,
+    source_name: typedRefName(d.source_type, d.source_id, data),
+    target_name: d.target_type === "external" ? (d.target_name || "") : typedRefName(d.target_type, d.target_id, data),
+  }), [data]);
 
   const fieldOverrides = {
     source_type: (ctx) => <TypeSelect {...ctx} idField="source_id" nameField="source_name" />,
@@ -71,7 +77,8 @@ export default function Dependencies() {
         { key: "target_type", label: "Target", options: ["workload", "environment", "node", "network_service", "storage", "external"].map((v) => ({ value: v, label: v.replace(/_/g, " ") })) },
       ]}
       fieldOverrides={fieldOverrides}
-      hidden={["source_name", "target_name"]}
+      enrich={enrich}
+      hidden={["target_name"]}
       exportColumns={[
         { label: "Source", get: (r) => r.source_name },
         { label: "Source type", get: (r) => r.source_type },

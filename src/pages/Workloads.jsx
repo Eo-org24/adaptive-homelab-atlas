@@ -2,7 +2,8 @@ import React, { useMemo } from "react";
 import EntityCrudPage from "@/components/EntityCrudPage";
 import { useAllEntities } from "@/hooks/useEntities";
 import { RelatedList, SpecGrid, Section } from "@/components/Related";
-import { fmtGB, lifecycleTone, criticalityTone, stateClassTone, badgeClass, StatusBadge, fmtDate } from "@/lib/homelab";
+import MaintenanceList from "@/components/MaintenanceList";
+import { fmtGB, lifecycleTone, criticalityTone, stateClassTone, badgeClass, StatusBadge, fmtDate, refName, typedRefName } from "@/lib/homelab";
 
 const ROUTE_BY_TYPE = { workload: "/workloads", environment: "/environments", node: "/nodes", storage: "/storage", network_service: "/network", external: null };
 
@@ -17,7 +18,7 @@ const COLUMNS = [
 ];
 
 export default function Workloads() {
-  const { data } = useAllEntities(["Node", "ExecutionEnvironment", "Dependency", "Maintenance", "PlannedChange", "Decision"]);
+  const { data } = useAllEntities(["Node", "Workload", "ExecutionEnvironment", "StorageDevice", "NetworkDevice", "Dependency", "Maintenance", "PlannedChange", "Decision"]);
   const nodes = data.Node || [];
   const envs = data.ExecutionEnvironment || [];
   const deps = data.Dependency || [];
@@ -29,6 +30,16 @@ export default function Workloads() {
     preferred_node: nodes.map((n) => ({ value: n.id, label: n.hostname })),
     current_environment: envs.map((e) => ({ value: e.id, label: `${e.name} (${e.type})` })),
   }), [nodes, envs]);
+
+  const enrich = useMemo(() => (w) => {
+    const env = envs.find((e) => e.id === w.current_environment);
+    return {
+      ...w,
+      current_host_name: refName(nodes, w.current_host, "hostname"),
+      current_environment_name: env ? `${env.name} (${env.type})` : "",
+      preferred_node_name: refName(nodes, w.preferred_node, "hostname"),
+    };
+  }, [nodes, envs]);
 
   const detailRender = (w, { goTo }) => {
     const outDeps = deps.filter((d) => d.source_type === "workload" && d.source_id === w.id);
@@ -68,13 +79,13 @@ export default function Workloads() {
         {w.notes && <Section title="Notes"><p className="text-sm whitespace-pre-wrap">{w.notes}</p></Section>}
 
         <Section title={`Dependencies (outgoing: ${outDeps.length})`}>
-          <RelatedList items={outDeps} label={(d) => `${(d.target_type || "").replace(/_/g, " ")} → ${d.target_name || "—"}`} status={(d) => d.kind} goTo={goTo} emptyMsg="No outgoing dependencies" idFor={(d) => d.target_id} routeFor={(d) => ROUTE_BY_TYPE[d.target_type]} />
+          <RelatedList items={outDeps} label={(d) => `${(d.target_type || "").replace(/_/g, " ")} → ${typedRefName(d.target_type, d.target_id, data) || d.target_name || "—"}`} status={(d) => d.kind} goTo={goTo} emptyMsg="No outgoing dependencies" idFor={(d) => d.target_id} routeFor={(d) => ROUTE_BY_TYPE[d.target_type]} />
         </Section>
         <Section title={`Depended on by (incoming: ${inDeps.length})`}>
-          <RelatedList items={inDeps} label={(d) => `${d.source_name || "—"} ← depends on this`} status={(d) => d.kind} goTo={goTo} emptyMsg="Nothing depends on this workload" idFor={(d) => d.source_id} routeFor={(d) => ROUTE_BY_TYPE[d.source_type]} />
+          <RelatedList items={inDeps} label={(d) => `${typedRefName(d.source_type, d.source_id, data) || "—"} ← depends on this`} status={(d) => d.kind} goTo={goTo} emptyMsg="Nothing depends on this workload" idFor={(d) => d.source_id} routeFor={(d) => ROUTE_BY_TYPE[d.source_type]} />
         </Section>
         <Section title="Maintenance history">
-          <RelatedList items={maintenance.filter((m) => m.target_id === w.id)} route="/maintenance" label={(m) => `${m.type} — ${m.target_name}`} sub={(m) => fmtDate(m.timestamp)} status={(m) => m.outcome} goTo={goTo} emptyMsg="No maintenance" />
+          <MaintenanceList items={maintenance.filter((m) => m.target_id === w.id)} data={data} goTo={goTo} emptyMsg="No maintenance" />
         </Section>
         <Section title="Affected by changes">
           <RelatedList items={changes.filter((c) => (c.affected_workloads || []).includes(w.id))} route="/change-planner" label={(c) => c.title} status={(c) => c.status} tone={(c) => lifecycleTone(c.status)} goTo={goTo} />
@@ -96,8 +107,7 @@ export default function Workloads() {
         { key: "lifecycle", label: "Lifecycle", options: ["planned", "onboarding", "active", "experimental", "maintenance", "degraded", "retiring", "retired"].map((v) => ({ value: v })) },
       ]}
       refOptions={refOptions}
-      nameFields={{ current_host: "current_host_name", current_environment: "current_environment_name", preferred_node: "preferred_node_name" }}
-      hidden={["current_host_name", "current_environment_name", "preferred_node_name"]}
+      enrich={enrich}
       exportColumns={[
         { label: "Name", get: (r) => r.name },
         { label: "Category", get: (r) => r.category },

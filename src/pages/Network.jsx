@@ -3,6 +3,7 @@ import EntityCrudPage from "@/components/EntityCrudPage";
 import { useAllEntities } from "@/hooks/useEntities";
 import PortManager from "@/components/PortManager";
 import { SpecGrid, Section, RelatedList } from "@/components/Related";
+import MaintenanceList from "@/components/MaintenanceList";
 import { lifecycleTone, StatusBadge, fmtDate, badgeClass } from "@/lib/homelab";
 
 const COLUMNS = [
@@ -16,7 +17,7 @@ const COLUMNS = [
 ];
 
 export default function Network() {
-  const { data: all, refresh } = useAllEntities(["SwitchPort", "Maintenance"]);
+  const { data: all, refresh } = useAllEntities(["SwitchPort", "Node", "Workload", "ExecutionEnvironment", "StorageDevice", "Maintenance"]);
   const ports = all.SwitchPort || [];
   const maintenance = (all.Maintenance || []).filter((m) => m.target_type === "network_device");
 
@@ -39,7 +40,7 @@ export default function Network() {
         <div className="flex flex-wrap gap-1.5">{d.tags.map((t) => <span key={t} className={badgeClass("zinc")}>{t}</span>)}</div>
       )}
       <Section title="Maintenance history">
-        <RelatedList items={maintenance.filter((m) => m.target_id === d.id)} route="/maintenance" label={(m) => `${m.type} — ${m.target_name}`} sub={(m) => fmtDate(m.timestamp)} status={(m) => m.outcome} goTo={goTo} emptyMsg="No maintenance logged" />
+        <MaintenanceList items={maintenance.filter((m) => m.target_id === d.id)} data={all} goTo={goTo} emptyMsg="No maintenance logged" />
       </Section>
     </div>
   );

@@ -9,10 +9,10 @@ import { useAllEntities } from "@/hooks/useEntities";
 import { StatCard, Card, EmptyState } from "@/components/ui-bits";
 import {
   fmtGB, fmtDate, timeAgo, lifecycleTone, criticalityTone, riskTone, badgeClass, StatusBadge,
-  detectCycles, criticalityMismatches, reconstructabilityIssues, resourceShortages, nodeAllocations,
+  detectCycles, criticalityMismatches, reconstructabilityIssues, resourceShortages, nodeAllocations, typedRefName,
 } from "@/lib/homelab";
 
-const LOAD = ["Node", "Workload", "ExecutionEnvironment", "StorageDevice", "PlannedChange", "Task", "Maintenance", "Decision", "Dependency"];
+const LOAD = ["Node", "Workload", "ExecutionEnvironment", "StorageDevice", "NetworkDevice", "PlannedChange", "Task", "Maintenance", "Decision", "Dependency"];
 
 const PIE_COLORS = ["#0ea5e9", "#8b5cf6", "#f59e0b", "#10b981", "#f43f5e", "#6366f1", "#ec4899", "#14b8a6", "#f97316", "#a3a3a3", "#84cc16"];
 
@@ -282,7 +282,7 @@ export default function Overview() {
                     {m.type}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium truncate">{m.target_name}</div>
+                    <div className="text-sm font-medium truncate">{typedRefName(m.target_type, m.target_id, data) || "—"}</div>
                     <div className="text-[11px] text-muted-foreground">{timeAgo(m.timestamp || m.updated_date)}</div>
                   </div>
                 </li>

@@ -17,70 +17,61 @@ import {
 import { base44 } from "@/api/base44Client";
 import { exportJSON, exportCSV } from "@/lib/homelab";
 
-// Generic CRUD page. detailRender(record, ctx) => ReactNode; ctx = { goTo, all }
+// Generic CRUD page. `enrich(record) -> record` resolves display fields live
+// from canonical records so renames propagate; the form only persists schema
+// fields. detailRender(record, { goTo }).
 export default function EntityCrudPage({
   entityName, title, description, columns, searchKeys = [], filters = [],
   refOptions = {}, detailRender, exportColumns, focusId, hidden = [], actions, initialFilters = {},
-  nameFields, fieldOverrides,
+  fieldOverrides, enrich = (r) => r,
 }) {
   const { data, loading, refresh } = useEntities(entityName);
   const [query, setQuery] = useState("");
   const [filterVals, setFilterVals] = useState(initialFilters);
-  const [editing, setEditing] = useState(null); // record or {} for new
+  const [editing, setEditing] = useState(null);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [detail, setDetail] = useState(null);
+  const [detailId, setDetailId] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const navigate = useNavigate();
   const [params] = useSearchParams();
 
-  // Auto-open detail from ?focus=
+  const rows = useMemo(() => (data || []).map(enrich), [data, enrich]);
+  const detailRow = rows.find((r) => r.id === detailId) || null;
+
+  // Sync detail to ?focus= (cross-page navigation) without fighting row clicks.
   useEffect(() => {
     const f = focusId || params.get("focus");
-    if (f && data.length) {
-      const rec = data.find((r) => r.id === f);
-      if (rec) setDetail(rec);
-    }
+    if (f && data.length) setDetailId(f);
   }, [focusId, params, data]);
 
   const filtered = useMemo(() => {
-    let rows = data;
+    let out = rows;
     if (query.trim()) {
       const q = query.toLowerCase();
-      rows = rows.filter((r) => searchKeys.some((k) => String(r[k] ?? "").toLowerCase().includes(q)));
+      out = out.filter((r) => searchKeys.some((k) => String(r[k] ?? "").toLowerCase().includes(q)));
     }
     filters.forEach((f) => {
       const v = filterVals[f.key];
-      if (v && v !== "__all") rows = rows.filter((r) => (f.get ? f.get(r) : r[f.key]) === v);
+      if (v && v !== "__all") out = out.filter((r) => (f.get ? f.get(r) : r[f.key]) === v);
     });
-    return rows;
-  }, [data, query, filterVals, searchKeys, filters]);
+    return out;
+  }, [rows, query, filterVals, searchKeys, filters]);
 
   const openNew = () => { setEditing({}); setDialogOpen(true); };
   const openEdit = (r) => { setEditing(r); setDialogOpen(true); };
 
   const submit = async (vals) => {
-    // Derive denormalized *_name fields from refOptions so relationships stay in sync.
-    let final = vals;
-    if (nameFields) {
-      final = { ...vals };
-      Object.entries(nameFields).forEach(([idField, nameField]) => {
-        const sel = (refOptions?.[idField] || []).find((o) => o.value === final[idField]);
-        if (sel) final[nameField] = sel.label;
-        else if (!final[idField]) final[nameField] = "";
-      });
-    }
-    if (editing.id) await base44.entities[entityName].update(editing.id, final);
-    else await base44.entities[entityName].create(final);
+    if (editing.id) await base44.entities[entityName].update(editing.id, vals);
+    else await base44.entities[entityName].create(vals);
     setDialogOpen(false);
     setEditing(null);
     refresh();
-    if (detail) setDetail((d) => d && { ...d, ...final });
   };
 
   const doDelete = async () => {
     await base44.entities[entityName].delete(deleteTarget.id);
     setDeleteTarget(null);
-    if (detail?.id === deleteTarget.id) setDetail(null);
+    if (detailId === deleteTarget.id) setDetailId(null);
     refresh();
   };
 
@@ -150,7 +141,7 @@ export default function EntityCrudPage({
               </thead>
               <tbody className="divide-y divide-border">
                 {filtered.map((r) => (
-                  <tr key={r.id} className="hover:bg-muted/30 cursor-pointer" onClick={() => setDetail(r)}>
+                  <tr key={r.id} className="hover:bg-muted/30 cursor-pointer" onClick={() => setDetailId(r.id)}>
                     {columns.map((c) => {
                       const v = c.get ? c.get(r) : r[c.key];
                       return (
@@ -200,18 +191,18 @@ export default function EntityCrudPage({
 
       {/* Detail drawer */}
       <Drawer
-        open={!!detail}
-        onClose={() => { setDetail(null); if (params.get("focus")) navigate(window.location.pathname, { replace: true }); }}
-        title={detail ? (detail.hostname || detail.name || detail.title || detail.task || detail.target_name || "Detail") : ""}
-        subtitle={detail ? (detail.description || detail.model || detail.port_identifier || "") : ""}
-        footer={detail && (
+        open={!!detailRow}
+        onClose={() => { setDetailId(null); if (params.get("focus")) navigate(window.location.pathname, { replace: true }); }}
+        title={detailRow ? (detailRow.hostname || detailRow.name || detailRow.title || detailRow.task || detailRow.target_name || "Detail") : ""}
+        subtitle={detailRow ? (detailRow.description || detailRow.model || detailRow.port_identifier || "") : ""}
+        footer={detailRow && (
           <>
-            <Button variant="outline" size="sm" onClick={() => openEdit(detail)}><Pencil className="w-3.5 h-3.5 mr-1.5" />Edit</Button>
-            <Button variant="outline" size="sm" onClick={() => exportJSON([detail], `${entityName.toLowerCase()}-${detail.id}`)}><FileJson className="w-3.5 h-3.5 mr-1.5" />Export</Button>
+            <Button variant="outline" size="sm" onClick={() => openEdit(detailRow)}><Pencil className="w-3.5 h-3.5 mr-1.5" />Edit</Button>
+            <Button variant="outline" size="sm" onClick={() => exportJSON([detailRow], `${entityName.toLowerCase()}-${detailRow.id}`)}><FileJson className="w-3.5 h-3.5 mr-1.5" />Export</Button>
           </>
         )}
       >
-        {detail && detailRender && detailRender(detail, { goTo, all: data })}
+        {detailRow && detailRender && detailRender(detailRow, { goTo })}
       </Drawer>
 
       {/* Delete confirm */}
@@ -219,7 +210,7 @@ export default function EntityCrudPage({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this record?</AlertDialogTitle>
-            <AlertDialogDescription>This cannot be undone. Related links may become stale.</AlertDialogDescription>
+            <AlertDialogDescription>This cannot be undone. Records referencing it will show a broken link until updated.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>

@@ -2,7 +2,8 @@ import React, { useMemo } from "react";
 import EntityCrudPage from "@/components/EntityCrudPage";
 import { useAllEntities } from "@/hooks/useEntities";
 import { RelatedList, SpecGrid, Section } from "@/components/Related";
-import { fmtGB, StatusBadge } from "@/lib/homelab";
+import MaintenanceList from "@/components/MaintenanceList";
+import { fmtGB, StatusBadge, refName } from "@/lib/homelab";
 
 const STATE_TONE = { active: "emerald", degraded: "amber", maintenance: "amber", planned: "violet", retired: "zinc" };
 const COLUMNS = [
@@ -14,13 +15,18 @@ const COLUMNS = [
 ];
 
 export default function StoragePools() {
-  const { data } = useAllEntities(["Node", "StorageDevice", "Maintenance"]);
+  const { data } = useAllEntities(["Node", "Workload", "ExecutionEnvironment", "NetworkDevice", "StorageDevice", "Maintenance"]);
   const nodes = data.Node || [];
   const devices = data.StorageDevice || [];
   const maintenance = data.Maintenance || [];
 
   const refOptions = useMemo(() => ({
     node: nodes.map((n) => ({ value: n.id, label: n.hostname })),
+  }), [nodes]);
+
+  const enrich = useMemo(() => (p) => ({
+    ...p,
+    node_name: refName(nodes, p.node, "hostname"),
   }), [nodes]);
 
   const detailRender = (p, { goTo }) => {
@@ -39,7 +45,7 @@ export default function StoragePools() {
           <RelatedList items={members} route="/storage" label={(d) => `${d.model} · ${fmtGB(d.capacity_gb)}`} sub={(d) => d.media_type} status={(d) => d.health} goTo={goTo} emptyMsg="No devices assigned" />
         </Section>
         <Section title="Maintenance history">
-          <RelatedList items={maintenance.filter((m) => m.target_id === p.id)} route="/maintenance" label={(m) => `${m.type} — ${m.target_name}`} status={(m) => m.outcome} goTo={goTo} emptyMsg="No maintenance" />
+          <MaintenanceList items={maintenance.filter((m) => m.target_id === p.id)} data={data} goTo={goTo} emptyMsg="No maintenance" />
         </Section>
       </div>
     );
@@ -57,8 +63,7 @@ export default function StoragePools() {
         { key: "state", label: "State", options: ["active", "degraded", "maintenance", "planned", "retired"].map((v) => ({ value: v })) },
       ]}
       refOptions={refOptions}
-      nameFields={{ node: "node_name" }}
-      hidden={["node_name"]}
+      enrich={enrich}
       exportColumns={[
         { label: "Name", get: (r) => r.name },
         { label: "Node", get: (r) => r.node_name },
