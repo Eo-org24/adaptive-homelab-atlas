@@ -2,7 +2,7 @@ import React, { useEffect } from "react";
 import { X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
-export default function Drawer({ open, onClose, title, subtitle, children, footer, width = "max-w-xl" }) {
+export default function Drawer({ open, onClose, title, subtitle, eyebrow, children, footer, width = "max-w-2xl" }) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e) => { if (e.key === "Escape") onClose(); };
@@ -24,8 +24,9 @@ export default function Drawer({ open, onClose, title, subtitle, children, foote
             transition={{ type: "spring", damping: 30, stiffness: 300 }}
             className={`fixed right-0 top-0 bottom-0 w-full ${width} bg-background border-l border-border z-50 flex flex-col shadow-2xl`}
           >
-            <div className="flex items-start justify-between px-5 py-4 border-b border-border">
+            <div className="flex items-start justify-between px-4 py-3 border-b border-border">
               <div className="min-w-0">
+                {eyebrow && <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium mb-1">{eyebrow}</div>}
                 <h2 className="text-base font-semibold truncate">{title}</h2>
                 {subtitle && <p className="text-xs text-muted-foreground mt-0.5 truncate">{subtitle}</p>}
               </div>
@@ -33,8 +34,8 @@ export default function Drawer({ open, onClose, title, subtitle, children, foote
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto px-5 py-4">{children}</div>
-            {footer && <div className="px-5 py-3 border-t border-border flex justify-end gap-2">{footer}</div>}
+            <div className="flex-1 overflow-y-auto px-4 py-3">{children}</div>
+            {footer && <div className="px-4 py-2.5 border-t border-border flex items-center gap-2">{footer}</div>}
           </motion.div>
         </>
       )}

@@ -34,9 +34,9 @@ export default function Activity() {
   const filtered = type === "all" ? feed : feed.filter((i) => i._type === type);
 
   return (
-    <div className="p-6 max-w-[1600px] mx-auto">
+    <div className="p-4 xl:p-6 max-w-[1760px] mx-auto">
       <PageHeader title="Activity" description="A unified timeline derived from every record type — newest first." />
-      <div className="flex flex-wrap gap-1.5 mb-4">
+      <div className="flex flex-wrap gap-1.5 mb-3">
         <Chip active={type === "all"} onClick={() => setType("all")}>All</Chip>
         {SOURCES.map((s) => <Chip key={s.label} active={type === s.label} onClick={() => setType(s.label)}>{s.label}</Chip>)}
       </div>

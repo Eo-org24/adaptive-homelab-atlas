@@ -78,7 +78,7 @@ export default function EntityCrudPage({
   const goTo = (route, id) => navigate(`${route}?focus=${id}`);
 
   return (
-    <div className="p-6 max-w-[1600px] mx-auto">
+    <div className="p-4 xl:p-6 max-w-[1760px] mx-auto">
       <PageHeader
         title={title}
         description={description}
@@ -100,7 +100,7 @@ export default function EntityCrudPage({
         }
       />
 
-      <div className="flex flex-col sm:flex-row gap-2 mb-4">
+      <div className="flex flex-col sm:flex-row gap-2 mb-3">
         <div className="relative flex-1 max-w-sm">
           <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -134,7 +134,7 @@ export default function EntityCrudPage({
               <thead className="bg-muted/50 text-muted-foreground">
                 <tr>
                   {columns.map((c) => (
-                    <th key={c.key} className={`text-left font-medium px-3 py-2.5 whitespace-nowrap ${c.className || ""}`}>{c.label}</th>
+                    <th key={c.key} className={`text-left font-medium px-3 py-2 whitespace-nowrap ${c.className || ""}`}>{c.label}</th>
                   ))}
                   <th className="w-px"></th>
                 </tr>
@@ -145,7 +145,7 @@ export default function EntityCrudPage({
                     {columns.map((c) => {
                       const v = c.get ? c.get(r) : r[c.key];
                       return (
-                        <td key={c.key} className={`px-3 py-2.5 align-top ${c.className || ""}`}>
+                        <td key={c.key} className={`px-3 py-2 align-top ${c.className || ""}`}>
                           {c.render ? c.render(r, { goTo }) : c.tone ? (
                             <span className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${c.tone(r)}`}>{String(v ?? "—")}</span>
                           ) : (
@@ -154,7 +154,7 @@ export default function EntityCrudPage({
                         </td>
                       );
                     })}
-                    <td className="px-2 py-2.5">
+                    <td className="px-2 py-2">
                       <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                         <button onClick={() => openEdit(r)} className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground"><Pencil className="w-3.5 h-3.5" /></button>
                         <button onClick={() => setDeleteTarget(r)} className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-rose-500"><Trash2 className="w-3.5 h-3.5" /></button>
@@ -193,12 +193,16 @@ export default function EntityCrudPage({
       <Drawer
         open={!!detailRow}
         onClose={() => { setDetailId(null); if (params.get("focus")) navigate(window.location.pathname, { replace: true }); }}
+        eyebrow={entityName}
         title={detailRow ? (detailRow.hostname || detailRow.name || detailRow.title || detailRow.task || detailRow.target_name || "Detail") : ""}
         subtitle={detailRow ? (detailRow.description || detailRow.model || detailRow.port_identifier || "") : ""}
         footer={detailRow && (
           <>
-            <Button variant="outline" size="sm" onClick={() => openEdit(detailRow)}><Pencil className="w-3.5 h-3.5 mr-1.5" />Edit</Button>
-            <Button variant="outline" size="sm" onClick={() => exportJSON([detailRow], `${entityName.toLowerCase()}-${detailRow.id}`)}><FileJson className="w-3.5 h-3.5 mr-1.5" />Export</Button>
+            <Button variant="ghost" size="sm" onClick={() => { setDetailId(null); navigate(window.location.pathname); }}><ExternalLink className="w-3.5 h-3.5 mr-1.5" />View all</Button>
+            <span className="ml-auto flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => openEdit(detailRow)}><Pencil className="w-3.5 h-3.5 mr-1.5" />Edit</Button>
+              <Button variant="outline" size="sm" onClick={() => exportJSON([detailRow], `${entityName.toLowerCase()}-${detailRow.id}`)}><FileJson className="w-3.5 h-3.5 mr-1.5" />Export</Button>
+            </span>
           </>
         )}
       >

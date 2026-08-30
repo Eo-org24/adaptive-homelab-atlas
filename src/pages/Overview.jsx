@@ -83,8 +83,8 @@ export default function Overview() {
   if (loading) return <div className="p-6"><div className="w-8 h-8 border-4 border-muted border-t-foreground rounded-full animate-spin mx-auto mt-20" /></div>;
 
   return (
-    <div className="p-6 max-w-[1600px] mx-auto">
-      <div className="flex items-center justify-between mb-5">
+    <div className="p-4 xl:p-6 max-w-[1760px] mx-auto">
+      <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Operations Overview</h1>
           <p className="text-sm text-muted-foreground mt-1">Documented state of the homelab — not live monitoring. Manually entered, observed, imported, inferred, and planned values are distinguished throughout.</p>
@@ -95,7 +95,7 @@ export default function Overview() {
       </div>
 
       {/* Stat cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3 mb-4">
         <StatCard label="Nodes" value={stats.nodes} sub={`${stats.totalNodes} documented`} icon={Server} tone="sky" onClick={() => navigate("/nodes")} />
         <StatCard label="Workloads" value={stats.workloads} icon={Boxes} tone="violet" onClick={() => navigate("/workloads")} />
         <StatCard label="Total CPU" value={`${stats.totalCpu}`} sub="logical CPUs" icon={Cpu} tone="emerald" onClick={() => navigate("/capacity")} />
@@ -107,7 +107,7 @@ export default function Overview() {
       </div>
 
       {/* Charts row 1 */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-3">
         <Card title="RAM capacity by node (GB)" className="p-4">
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={ramByNode} margin={{ top: 4, right: 4, bottom: 4, left: -16 }}>
@@ -146,7 +146,7 @@ export default function Overview() {
       </div>
 
       {/* Charts row 2 */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-4">
         <Card title="Workload distribution by category" className="p-4">
           <ResponsiveContainer width="100%" height={200}>
             <PieChart>
@@ -183,7 +183,7 @@ export default function Overview() {
       </div>
 
       {/* Sections grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
         {/* Architecture warnings */}
         <Card title="Architecture warnings" className="p-4" actions={<ShieldAlert className="w-4 h-4 text-rose-500" />}>
           {stats.warnings.length === 0 ? (

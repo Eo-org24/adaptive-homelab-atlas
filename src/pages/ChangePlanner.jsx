@@ -89,7 +89,7 @@ export default function ChangePlanner() {
 
   return (
     <div>
-      <div className="px-6 pt-5 max-w-[1600px] mx-auto">
+      <div className="px-4 xl:px-6 pt-5 max-w-[1760px] mx-auto">
         <div className="flex items-center gap-2 border-b border-border">
           <TabButton active={tab === "changes"} onClick={() => setTab("changes")} icon={GitBranch}>Planned Changes</TabButton>
           <TabButton active={tab === "simulator"} onClick={() => setTab("simulator")} icon={Sliders}>Placement Simulator</TabButton>
@@ -122,7 +122,7 @@ export default function ChangePlanner() {
           detailRender={detailRender}
         />
       ) : (
-        <div className="p-6 max-w-[1600px] mx-auto">
+        <div className="p-4 xl:p-6 max-w-[1760px] mx-auto">
           <h1 className="text-xl font-semibold tracking-tight mb-1">Workload Placement Simulator</h1>
           <p className="text-sm text-muted-foreground mb-5">Evaluate candidate host nodes for a workload, scored by the homelab's priority principles.</p>
           <PlacementSimulator />
