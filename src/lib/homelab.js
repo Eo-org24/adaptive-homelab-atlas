@@ -323,9 +323,10 @@ export async function globalSearch(query) {
   const targets = [
     { entity: "Node", label: "Node", nameKey: "hostname", route: "/nodes" },
     { entity: "Workload", label: "Workload", nameKey: "name", route: "/workloads" },
-    { entity: "ExecutionEnvironment", label: "Environment", nameKey: "name", route: "/workloads" },
+    { entity: "ExecutionEnvironment", label: "Environment", nameKey: "name", route: "/environments" },
     { entity: "NetworkDevice", label: "Network device", nameKey: "name", route: "/network" },
     { entity: "StorageDevice", label: "Storage", nameKey: "model", route: "/storage" },
+    { entity: "StoragePool", label: "Storage pool", nameKey: "name", route: "/storage-pools" },
     { entity: "PlannedChange", label: "Change", nameKey: "title", route: "/change-planner" },
     { entity: "Decision", label: "Decision", nameKey: "title", route: "/decisions" },
     { entity: "Maintenance", label: "Maintenance", nameKey: "target_name", route: "/maintenance" },

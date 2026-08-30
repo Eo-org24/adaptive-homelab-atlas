@@ -66,6 +66,7 @@ export default function EntityCrudPage({
       Object.entries(nameFields).forEach(([idField, nameField]) => {
         const sel = (refOptions?.[idField] || []).find((o) => o.value === final[idField]);
         if (sel) final[nameField] = sel.label;
+        else if (!final[idField]) final[nameField] = "";
       });
     }
     if (editing.id) await base44.entities[entityName].update(editing.id, final);

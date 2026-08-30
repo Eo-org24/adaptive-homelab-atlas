@@ -1,9 +1,9 @@
 import React from "react";
 import EntityCrudPage from "@/components/EntityCrudPage";
-import { useEntities } from "@/hooks/useEntities";
+import { useAllEntities } from "@/hooks/useEntities";
 import PortManager from "@/components/PortManager";
-import { SpecGrid, Section } from "@/components/Related";
-import { lifecycleTone, StatusBadge, fmtDate } from "@/lib/homelab";
+import { SpecGrid, Section, RelatedList } from "@/components/Related";
+import { lifecycleTone, StatusBadge, fmtDate, badgeClass } from "@/lib/homelab";
 
 const COLUMNS = [
   { key: "name", label: "Name", className: "font-medium" },
@@ -16,7 +16,9 @@ const COLUMNS = [
 ];
 
 export default function Network() {
-  const { data: ports, refresh } = useEntities("SwitchPort");
+  const { data: all, refresh } = useAllEntities(["SwitchPort", "Maintenance"]);
+  const ports = all.SwitchPort || [];
+  const maintenance = (all.Maintenance || []).filter((m) => m.target_type === "network_device");
 
   const detailRender = (d, { goTo }) => (
     <div className="space-y-4">
@@ -32,6 +34,12 @@ export default function Network() {
       ]} />
       <Section title={`Switch ports (${ports.filter((p) => p.device === d.id).length})`}>
         <PortManager device={d} ports={ports} onRefresh={refresh} />
+      </Section>
+      {(d.tags || []).length > 0 && (
+        <div className="flex flex-wrap gap-1.5">{d.tags.map((t) => <span key={t} className={badgeClass("zinc")}>{t}</span>)}</div>
+      )}
+      <Section title="Maintenance history">
+        <RelatedList items={maintenance.filter((m) => m.target_id === d.id)} route="/maintenance" label={(m) => `${m.type} — ${m.target_name}`} sub={(m) => fmtDate(m.timestamp)} status={(m) => m.outcome} goTo={goTo} emptyMsg="No maintenance logged" />
       </Section>
     </div>
   );

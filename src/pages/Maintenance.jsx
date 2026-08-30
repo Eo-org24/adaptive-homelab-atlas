@@ -2,6 +2,7 @@ import React, { useMemo } from "react";
 import EntityCrudPage from "@/components/EntityCrudPage";
 import { useAllEntities } from "@/hooks/useEntities";
 import { RelatedList, SpecGrid, Section } from "@/components/Related";
+import RefByType, { TypeSelect } from "@/components/RefByType";
 import { fmtDate, fmtDateTime, outcomeTone, StatusBadge } from "@/lib/homelab";
 
 const COLUMNS = [
@@ -13,22 +14,30 @@ const COLUMNS = [
 ];
 
 export default function Maintenance() {
-  const { data } = useAllEntities(["Node", "Workload", "StorageDevice", "NetworkDevice"]);
+  const { data } = useAllEntities(["Node", "Workload", "ExecutionEnvironment", "StorageDevice", "NetworkDevice"]);
   const nodes = data.Node || [];
   const workloads = data.Workload || [];
+  const envs = data.ExecutionEnvironment || [];
   const storage = data.StorageDevice || [];
   const network = data.NetworkDevice || [];
 
-  const refOptions = useMemo(() => {
-    const byType = (type) => {
-      if (type === "node") return nodes.map((n) => ({ value: n.id, label: n.hostname }));
-      if (type === "workload") return workloads.map((w) => ({ value: w.id, label: w.name }));
-      if (type === "storage") return storage.map((s) => ({ value: s.id, label: `${s.model}` }));
-      if (type === "network_device") return network.map((d) => ({ value: d.id, label: d.name }));
-      return [];
-    };
-    return { target_id: byType("node") };
-  }, [nodes, workloads, storage, network]);
+  const optionsByType = useMemo(() => ({
+    node: nodes.map((n) => ({ value: n.id, label: n.hostname })),
+    workload: workloads.map((w) => ({ value: w.id, label: w.name })),
+    environment: envs.map((e) => ({ value: e.id, label: e.name })),
+    network_device: network.map((d) => ({ value: d.id, label: d.name })),
+    storage: storage.map((s) => ({ value: s.id, label: s.model })),
+  }), [nodes, workloads, envs, network, storage]);
+
+  const fieldOverrides = {
+    target_type: (ctx) => <TypeSelect {...ctx} idField="target_id" nameField="target_name" />,
+    target_id: ({ value, set, label, isReq }) => (
+      <RefByType value={value} typeValue={value.target_type || "node"} idField="target_id" nameField="target_name"
+        optionsFor={(t) => optionsByType[t] || []}
+        onChange={(patch) => Object.entries(patch).forEach(([k, v]) => set(k, v))}
+        label={label} isReq={isReq} />
+    ),
+  };
 
   const detailRender = (m, { goTo }) => (
     <div className="space-y-4">
@@ -69,6 +78,8 @@ export default function Maintenance() {
         { label: "Outcome", get: (r) => r.outcome },
         { label: "Description", get: (r) => r.description },
       ]}
+      fieldOverrides={fieldOverrides}
+      hidden={["target_name"]}
       detailRender={detailRender}
     />
   );

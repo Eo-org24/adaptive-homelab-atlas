@@ -48,7 +48,7 @@ export default function Storage() {
         {s.purchase_notes && <Section title="Purchase / source"><p className="text-sm">{s.purchase_notes}</p></Section>}
         {s.notes && <Section title="Notes"><p className="text-sm whitespace-pre-wrap">{s.notes}</p></Section>}
         <Section title="Member of pools">
-          <RelatedList items={devicePools} route="/storage" label={(p) => p.name} sub={(p) => `${p.raid_level} · ${fmtGB(p.usable_capacity_gb)}`} status={(p) => p.state} goTo={goTo} emptyMsg="Not in any pool" />
+          <RelatedList items={devicePools} route="/storage-pools" label={(p) => p.name} sub={(p) => `${(p.raid_level || "").replace(/_/g, " ")} · ${fmtGB(p.usable_capacity_gb)}`} status={(p) => p.state} goTo={goTo} emptyMsg="Not in any pool" />
         </Section>
         <Section title="Maintenance history">
           <RelatedList items={maintenance.filter((m) => m.target_id === s.id)} route="/maintenance" label={(m) => `${m.type} — ${m.target_name}`} sub={(m) => fmtDate(m.timestamp)} status={(m) => m.outcome} goTo={goTo} emptyMsg="No maintenance" />
@@ -69,6 +69,7 @@ export default function Storage() {
         { key: "health", label: "Health", options: ["healthy", "warning", "failing", "unknown", "retired"].map((v) => ({ value: v })) },
       ]}
       refOptions={refOptions}
+      nameFields={{ current_node: "current_node_name" }}
       hidden={["current_node_name"]}
       exportColumns={[
         { label: "Manufacturer", get: (r) => r.manufacturer },

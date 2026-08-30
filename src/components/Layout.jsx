@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { NavLink, useNavigate, Outlet } from "react-router-dom";
 import {
-  LayoutDashboard, Server, Boxes, Network, HardDrive, Gauge, GitBranch,
+  LayoutDashboard, Server, Boxes, Container, Workflow, Network, HardDrive, Database, Gauge, GitBranch,
   Scale, Wrench, ListTodo, Activity, Settings, Search, Sun, Moon, LogOut, X,
 } from "lucide-react";
 import { base44 } from "@/api/base44Client";
@@ -11,8 +11,11 @@ const NAV = [
   { to: "/", label: "Overview", icon: LayoutDashboard, end: true },
   { to: "/nodes", label: "Nodes", icon: Server },
   { to: "/workloads", label: "Workloads", icon: Boxes },
+  { to: "/environments", label: "Environments", icon: Container },
+  { to: "/dependencies", label: "Dependencies", icon: Workflow },
   { to: "/network", label: "Network", icon: Network },
   { to: "/storage", label: "Storage", icon: HardDrive },
+  { to: "/storage-pools", label: "Pools", icon: Database },
   { to: "/capacity", label: "Capacity", icon: Gauge },
   { to: "/change-planner", label: "Change Planner", icon: GitBranch },
   { to: "/decisions", label: "Decisions", icon: Scale },

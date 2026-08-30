@@ -14,6 +14,9 @@ import Nodes from '@/pages/Nodes';
 import Workloads from '@/pages/Workloads';
 import Network from '@/pages/Network';
 import Storage from '@/pages/Storage';
+import StoragePools from '@/pages/StoragePools';
+import Environments from '@/pages/Environments';
+import Dependencies from '@/pages/Dependencies';
 import Capacity from '@/pages/Capacity';
 import ChangePlanner from '@/pages/ChangePlanner';
 import Decisions from '@/pages/Decisions';
@@ -61,8 +64,11 @@ const AuthenticatedApp = () => {
           <Route path="/" element={<Overview />} />
           <Route path="/nodes" element={<Nodes />} />
           <Route path="/workloads" element={<Workloads />} />
+          <Route path="/environments" element={<Environments />} />
+          <Route path="/dependencies" element={<Dependencies />} />
           <Route path="/network" element={<Network />} />
           <Route path="/storage" element={<Storage />} />
+          <Route path="/storage-pools" element={<StoragePools />} />
           <Route path="/capacity" element={<Capacity />} />
           <Route path="/change-planner" element={<ChangePlanner />} />
           <Route path="/decisions" element={<Decisions />} />

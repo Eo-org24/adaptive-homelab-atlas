@@ -35,7 +35,7 @@ export default function Overview() {
     const totalRam = nodes.reduce((s, n) => s + (n.ram_capacity_gb || 0), 0);
     const totalCpu = nodes.reduce((s, n) => s + (n.logical_cpus || n.physical_cores || 0), 0);
     const totalVram = nodes.reduce((s, n) => s + (n.gpu_vram_gb || 0), 0);
-    const usableStorage = storage.filter((s) => s.state_class !== "retired").reduce((s, d) => s + (d.capacity_gb || 0), 0);
+    const usableStorage = storage.filter((s) => s.health !== "retired").reduce((s, d) => s + (d.capacity_gb || 0), 0);
     const warnings = [
       ...detectCycles(deps).map((c) => `Dependency cycle: ${c.join(" → ")}`),
       ...criticalityMismatches(deps, workloads).map((m) => `Low-criticality "${m.target.name}" supports high-criticality "${m.source.name}"`),

@@ -51,7 +51,7 @@ export default function Nodes() {
         <RelatedList items={workloads.filter((w) => w.current_host === n.id)} route="/workloads" label={(w) => w.name} sub={(w) => w.category.replace(/_/g, " ")} status={(w) => w.lifecycle} tone={(w) => lifecycleTone(w.lifecycle)} goTo={goTo} />
       </Section>
       <Section title={`Execution environments (${envs.filter((e) => e.current_host === n.id).length})`}>
-        <RelatedList items={envs.filter((e) => e.current_host === n.id)} route="/workloads" label={(e) => e.name} sub={(e) => e.type} status={(e) => e.lifecycle} tone={(e) => lifecycleTone(e.lifecycle)} goTo={goTo} />
+        <RelatedList items={envs.filter((e) => e.current_host === n.id)} route="/environments" label={(e) => e.name} sub={(e) => (e.type || "").replace(/_/g, " ")} status={(e) => e.lifecycle} tone={(e) => lifecycleTone(e.lifecycle)} goTo={goTo} />
       </Section>
       <Section title={`Storage devices (${storage.filter((s) => s.current_node === n.id).length})`}>
         <RelatedList items={storage.filter((s) => s.current_node === n.id)} route="/storage" label={(s) => `${s.model} · ${fmtGB(s.capacity_gb)}`} sub={(s) => s.media_type} status={(s) => s.health} goTo={goTo} />

@@ -1,7 +1,8 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import EntityCrudPage from "@/components/EntityCrudPage";
 import { useAllEntities } from "@/hooks/useEntities";
 import { RelatedList, SpecGrid, Section } from "@/components/Related";
+import RefByType, { TypeSelect } from "@/components/RefByType";
 import { fmtDate, lifecycleTone, criticalityTone, StatusBadge } from "@/lib/homelab";
 
 const VIEWS = [
@@ -27,9 +28,34 @@ const COLUMNS = [
 
 export default function Tasks() {
   const [view, setView] = useState("all");
-  const { data } = useAllEntities(["Node", "Workload"]);
+  const { data } = useAllEntities(["Node", "Workload", "ExecutionEnvironment", "NetworkDevice", "StorageDevice", "PlannedChange", "Decision"]);
   const nodes = data.Node || [];
   const workloads = data.Workload || [];
+  const envs = data.ExecutionEnvironment || [];
+  const network = data.NetworkDevice || [];
+  const storage = data.StorageDevice || [];
+  const changes = data.PlannedChange || [];
+  const decisions = data.Decision || [];
+
+  const optionsFor = useMemo(() => ({
+    node: nodes.map((n) => ({ value: n.id, label: n.hostname })),
+    workload: workloads.map((w) => ({ value: w.id, label: w.name })),
+    environment: envs.map((e) => ({ value: e.id, label: e.name })),
+    network_device: network.map((d) => ({ value: d.id, label: d.name })),
+    storage: storage.map((s) => ({ value: s.id, label: s.model })),
+    change: changes.map((c) => ({ value: c.id, label: c.title })),
+    decision: decisions.map((d) => ({ value: d.id, label: `${d.decision_id} · ${d.title}` })),
+  }), [nodes, workloads, envs, network, storage, changes, decisions]);
+
+  const fieldOverrides = {
+    related_object_type: (ctx) => <TypeSelect {...ctx} idField="related_object_id" nameField="related_object_name" />,
+    related_object_id: ({ value, set, label, isReq }) => (
+      <RefByType value={value} typeValue={value.related_object_type || "node"} idField="related_object_id" nameField="related_object_name"
+        optionsFor={(t) => optionsFor[t] || []}
+        onChange={(patch) => Object.entries(patch).forEach(([k, v]) => set(k, v))}
+        label={label} isReq={isReq} />
+    ),
+  };
 
   const detailRender = (t, { goTo }) => (
     <div className="space-y-4">
@@ -82,6 +108,8 @@ export default function Tasks() {
           { label: "Effort", get: (r) => r.effort },
           { label: "Target", get: (r) => r.target_date },
         ]}
+        fieldOverrides={fieldOverrides}
+        hidden={["related_object_name"]}
         detailRender={detailRender}
       />
     </div>
