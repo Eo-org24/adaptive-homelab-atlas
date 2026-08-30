@@ -21,6 +21,7 @@ import { exportJSON, exportCSV } from "@/lib/homelab";
 export default function EntityCrudPage({
   entityName, title, description, columns, searchKeys = [], filters = [],
   refOptions = {}, detailRender, exportColumns, focusId, hidden = [], actions, initialFilters = {},
+  nameFields, fieldOverrides,
 }) {
   const { data, loading, refresh } = useEntities(entityName);
   const [query, setQuery] = useState("");
@@ -58,12 +59,21 @@ export default function EntityCrudPage({
   const openEdit = (r) => { setEditing(r); setDialogOpen(true); };
 
   const submit = async (vals) => {
-    if (editing.id) await base44.entities[entityName].update(editing.id, vals);
-    else await base44.entities[entityName].create(vals);
+    // Derive denormalized *_name fields from refOptions so relationships stay in sync.
+    let final = vals;
+    if (nameFields) {
+      final = { ...vals };
+      Object.entries(nameFields).forEach(([idField, nameField]) => {
+        const sel = (refOptions?.[idField] || []).find((o) => o.value === final[idField]);
+        if (sel) final[nameField] = sel.label;
+      });
+    }
+    if (editing.id) await base44.entities[entityName].update(editing.id, final);
+    else await base44.entities[entityName].create(final);
     setDialogOpen(false);
     setEditing(null);
     refresh();
-    if (detail) setDetail((d) => d && { ...d, ...vals });
+    if (detail) setDetail((d) => d && { ...d, ...final });
   };
 
   const doDelete = async () => {
@@ -180,6 +190,7 @@ export default function EntityCrudPage({
               onSubmit={submit}
               onCancel={() => { setDialogOpen(false); setEditing(null); }}
               refOptions={refOptions}
+              fieldOverrides={fieldOverrides}
               hidden={hidden}
             />
           )}

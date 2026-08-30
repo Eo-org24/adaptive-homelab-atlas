@@ -1,7 +1,7 @@
 import React from "react";
 import { StatusBadge } from "@/lib/homelab";
 
-export function RelatedList({ title, items, route, label, sub, status, tone, goTo, emptyMsg }) {
+export function RelatedList({ title, items, route, label, sub, status, tone, goTo, emptyMsg, idFor, routeFor }) {
   return (
     <div>
       <div className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium mb-2">{title}</div>
@@ -9,19 +9,27 @@ export function RelatedList({ title, items, route, label, sub, status, tone, goT
         <p className="text-xs text-muted-foreground">{emptyMsg || "None recorded"}</p>
       ) : (
         <ul className="space-y-1.5">
-          {items.map((it) => (
-            <li key={it.id} className="flex items-center gap-2 group">
-              <button
-                onClick={() => goTo(route, it.id)}
-                className="text-sm hover:text-sky-500 truncate flex-1 text-left"
-                title={label(it)}
-              >
-                {label(it)}
-              </button>
-              {sub && <span className="text-[11px] text-muted-foreground truncate hidden sm:block">{sub(it)}</span>}
-              {status && <StatusBadge value={status(it)} tone={tone ? tone(it) : "zinc"} />}
-            </li>
-          ))}
+          {items.map((it, i) => {
+            const r = routeFor ? routeFor(it) : route;
+            const id = idFor ? idFor(it) : it.id;
+            return (
+              <li key={it.id || id || i} className="flex items-center gap-2 group">
+                {r && goTo ? (
+                  <button
+                    onClick={() => goTo(r, id)}
+                    className="text-sm hover:text-sky-500 truncate flex-1 text-left"
+                    title={label(it)}
+                  >
+                    {label(it)}
+                  </button>
+                ) : (
+                  <span className="text-sm truncate flex-1" title={label(it)}>{label(it)}</span>
+                )}
+                {sub && <span className="text-[11px] text-muted-foreground truncate hidden sm:block">{sub(it)}</span>}
+                {status && <StatusBadge value={status(it)} tone={tone ? tone(it) : "zinc"} />}
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

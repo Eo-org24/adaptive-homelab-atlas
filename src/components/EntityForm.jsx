@@ -9,7 +9,7 @@ import { base44 } from "@/api/base44Client";
 const LONG_TEXT = ["notes", "description", "context", "decision", "rationale", "alternatives", "consequences", "proposed_actions", "prerequisites", "expected_result", "rollback_strategy", "reason", "before_state", "actions", "after_state", "operator_notes", "purchase_notes", "ram_configuration", "power_supply", "motherboard", "intended_purpose"];
 
 // Generic schema-driven form. refOptions: { fieldKey: [{value,label}] } forces a select.
-export default function EntityForm({ entityName, initial, onSubmit, onCancel, refOptions = {}, hidden = [] }) {
+export default function EntityForm({ entityName, initial, onSubmit, onCancel, refOptions = {}, hidden = [], fieldOverrides = {} }) {
   const [schema, setSchema] = useState(null);
   const [value, setValue] = useState(initial || {});
   const [saving, setSaving] = useState(false);
@@ -45,6 +45,13 @@ export default function EntityForm({ entityName, initial, onSubmit, onCancel, re
           const isLong = LONG_TEXT.includes(key) || (field.type === "string" && !field.enum && key.length > 10 && !refOptions[key]);
           const isReq = required.includes(key);
           const label = field.title || key.replace(/_/g, " ");
+          if (fieldOverrides[key]) {
+            return (
+              <div key={key} className="space-y-1.5 sm:col-span-2">
+                {fieldOverrides[key]({ value, set, field, fieldKey: key, label, isReq })}
+              </div>
+            );
+          }
           if (refOptions[key]) {
             return (
               <div key={key} className="space-y-1.5">
