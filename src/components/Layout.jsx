@@ -7,32 +7,23 @@ import {
 import { base44 } from "@/api/base44Client";
 import { globalSearch } from "@/lib/homelab";
 
-const NAV_GROUPS = [
-  { label: null, items: [{ to: "/", label: "Overview", icon: LayoutDashboard, end: true }] },
-  { label: "Inventory", items: [
-    { to: "/nodes", label: "Nodes", icon: Server },
-    { to: "/workloads", label: "Workloads", icon: Boxes },
-    { to: "/environments", label: "Environments", icon: Container },
-    { to: "/dependencies", label: "Dependencies", icon: Workflow },
-    { to: "/network", label: "Network", icon: Network },
-    { to: "/storage", label: "Storage", icon: HardDrive },
-    { to: "/storage-pools", label: "Pools", icon: Database },
-  ]},
-  { label: "Planning", items: [
-    { to: "/capacity", label: "Capacity", icon: Gauge },
-    { to: "/change-planner", label: "Change Planner", icon: GitBranch },
-    { to: "/decisions", label: "Decisions", icon: Scale },
-  ]},
-  { label: "Operations", items: [
-    { to: "/maintenance", label: "Maintenance", icon: Wrench },
-    { to: "/tasks", label: "Tasks", icon: ListTodo },
-    { to: "/activity", label: "Activity", icon: Activity },
-  ]},
-  { label: "System", items: [
-    { to: "/settings", label: "Settings", icon: Settings },
-  ]},
+const NAV = [
+  { to: "/", label: "Overview", icon: LayoutDashboard, end: true },
+  { to: "/nodes", label: "Nodes", icon: Server },
+  { to: "/workloads", label: "Workloads", icon: Boxes },
+  { to: "/environments", label: "Environments", icon: Container },
+  { to: "/dependencies", label: "Dependencies", icon: Workflow },
+  { to: "/network", label: "Network", icon: Network },
+  { to: "/storage", label: "Storage", icon: HardDrive },
+  { to: "/storage-pools", label: "Pools", icon: Database },
+  { to: "/capacity", label: "Capacity", icon: Gauge },
+  { to: "/change-planner", label: "Change Planner", icon: GitBranch },
+  { to: "/decisions", label: "Decisions", icon: Scale },
+  { to: "/maintenance", label: "Maintenance", icon: Wrench },
+  { to: "/tasks", label: "Tasks", icon: ListTodo },
+  { to: "/activity", label: "Activity", icon: Activity },
+  { to: "/settings", label: "Settings", icon: Settings },
 ];
-const NAV = NAV_GROUPS.flatMap((g) => g.items);
 
 export default function Layout() {
   const [dark, setDark] = useState(() => localStorage.getItem("aha-theme") === "dark");
@@ -47,14 +38,6 @@ export default function Layout() {
 
   useEffect(() => {
     base44.auth.me().then(setUser).catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    const onKey = (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setSearchOpen(true); }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
   }, []);
 
   return (
@@ -72,28 +55,23 @@ export default function Layout() {
             </div>
           </div>
         </div>
-        <nav className="flex-1 overflow-y-auto px-2 py-2 space-y-0.5">
-          {NAV_GROUPS.map((group, gi) => (
-            <div key={gi} className={gi === 0 ? "" : "pt-2"}>
-              {group.label && <div className="px-2.5 pt-2 pb-1 text-[10px] uppercase tracking-wider text-muted-foreground/70 font-medium">{group.label}</div>}
-              {group.items.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  end={item.end}
-                  className={({ isActive }) =>
-                    `flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] transition-colors ${
-                      isActive
-                        ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                        : "text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
-                    }`
-                  }
-                >
-                  <item.icon className="w-4 h-4 shrink-0" />
-                  <span>{item.label}</span>
-                </NavLink>
-              ))}
-            </div>
+        <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-0.5">
+          {NAV.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.end}
+              className={({ isActive }) =>
+                `flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors ${
+                  isActive
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                    : "text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
+                }`
+              }
+            >
+              <item.icon className="w-4 h-4 shrink-0" />
+              <span>{item.label}</span>
+            </NavLink>
           ))}
         </nav>
         <div className="px-3 py-3 border-t border-border">

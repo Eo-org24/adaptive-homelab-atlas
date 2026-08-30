@@ -13,13 +13,13 @@ export function StatCard({ label, value, sub, icon: Icon, tone = "zinc", onClick
   return (
     <button
       onClick={onClick}
-      className="text-left rounded-xl border border-border bg-card p-3 hover:border-foreground/20 transition-colors group"
+      className="text-left rounded-xl border border-border bg-card p-4 hover:border-foreground/20 transition-colors group"
     >
       <div className="flex items-center justify-between">
         <span className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">{label}</span>
         {Icon && <Icon className={`w-4 h-4 ${tones[tone]}`} />}
       </div>
-      <div className={`mt-1.5 text-xl font-semibold tabular-nums ${tones[tone]}`}>{value}</div>
+      <div className={`mt-2 text-2xl font-semibold tabular-nums ${tones[tone]}`}>{value}</div>
       {sub && <div className="text-[11px] text-muted-foreground mt-0.5">{sub}</div>}
     </button>
   );
@@ -27,9 +27,9 @@ export function StatCard({ label, value, sub, icon: Icon, tone = "zinc", onClick
 
 export function PageHeader({ title, description, actions }) {
   return (
-    <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 mb-4">
+    <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-5">
       <div>
-        <h1 className="text-lg font-semibold tracking-tight">{title}</h1>
+        <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
         {description && <p className="text-sm text-muted-foreground mt-1">{description}</p>}
       </div>
       {actions && <div className="flex items-center gap-2 flex-wrap">{actions}</div>}
@@ -41,7 +41,7 @@ export function Card({ title, actions, children, className = "" }) {
   return (
     <div className={`rounded-xl border border-border bg-card ${className}`}>
       {(title || actions) && (
-        <div className="flex items-center justify-between px-3 py-2.5 border-b border-border">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           {title && <h3 className="text-sm font-medium">{title}</h3>}
           {actions}
         </div>
@@ -53,7 +53,7 @@ export function Card({ title, actions, children, className = "" }) {
 
 export function EmptyState({ icon: Icon, title, sub }) {
   return (
-    <div className="flex flex-col items-center justify-center py-10 text-center">
+    <div className="flex flex-col items-center justify-center py-12 text-center">
       {Icon && <Icon className="w-8 h-8 text-muted-foreground/40 mb-2" />}
       <p className="text-sm font-medium">{title}</p>
       {sub && <p className="text-xs text-muted-foreground mt-1">{sub}</p>}
