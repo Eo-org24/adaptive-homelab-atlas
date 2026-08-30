@@ -139,6 +139,36 @@
       "items": {
         "type": "string"
       }
+    },
+    "external_id": {
+      "type": "string",
+      "title": "External canonical ID (e.g. node:rig9)"
+    },
+    "import_source": {
+      "type": "string",
+      "title": "Import source (e.g. homelab-foundation)"
+    },
+    "import_timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Import timestamp"
+    },
+    "source_commit": {
+      "type": "string",
+      "title": "Source version / commit"
+    },
+    "source_note": {
+      "type": "string",
+      "title": "Provenance source note"
+    },
+    "confidence": {
+      "type": "number",
+      "title": "Confidence (0-1)"
+    },
+    "observed_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Observed at"
     }
   },
   "required": [

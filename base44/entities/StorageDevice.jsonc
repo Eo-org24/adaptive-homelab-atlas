@@ -72,13 +72,14 @@
     },
     "state_class": {
       "type": "string",
-      "title": "State class",
+      "title": "State class (provenance)",
       "enum": [
         "documented",
         "observed",
         "imported",
         "inferred",
-        "planned"
+        "planned",
+        "sample"
       ],
       "default": "documented"
     },
@@ -99,6 +100,36 @@
     "notes": {
       "type": "string",
       "title": "Notes"
+    },
+    "external_id": {
+      "type": "string",
+      "title": "External canonical ID (e.g. storage:sg-001)"
+    },
+    "import_source": {
+      "type": "string",
+      "title": "Import source"
+    },
+    "import_timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Import timestamp"
+    },
+    "source_commit": {
+      "type": "string",
+      "title": "Source version / commit"
+    },
+    "source_note": {
+      "type": "string",
+      "title": "Provenance source note"
+    },
+    "confidence": {
+      "type": "number",
+      "title": "Confidence (0-1)"
+    },
+    "observed_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Observed at"
     }
   },
   "required": [

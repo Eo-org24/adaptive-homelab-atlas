@@ -84,13 +84,14 @@
     },
     "state_classification": {
       "type": "string",
-      "title": "State classification",
+      "title": "State classification (provenance)",
       "enum": [
         "documented",
         "observed",
         "imported",
         "inferred",
-        "planned"
+        "planned",
+        "sample"
       ],
       "default": "documented"
     },
@@ -139,6 +140,36 @@
       "items": {
         "type": "string"
       }
+    },
+    "external_id": {
+      "type": "string",
+      "title": "External canonical ID (e.g. workload:plex)"
+    },
+    "import_source": {
+      "type": "string",
+      "title": "Import source (e.g. homelab-foundation)"
+    },
+    "import_timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Import timestamp"
+    },
+    "source_commit": {
+      "type": "string",
+      "title": "Source version / commit"
+    },
+    "source_note": {
+      "type": "string",
+      "title": "Provenance source note"
+    },
+    "confidence": {
+      "type": "number",
+      "title": "Confidence (0-1)"
+    },
+    "observed_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Observed at"
     }
   },
   "required": [

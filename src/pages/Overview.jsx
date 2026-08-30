@@ -2,17 +2,19 @@ import React, { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Server, Boxes, Cpu, MemoryStick, Monitor, HardDrive, AlertTriangle, GitBranch, ListTodo,
-  CircleDot, FlaskConical, ShieldAlert, ArrowRight, Clock,
+  CircleDot, FlaskConical, ArrowRight, Clock,
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 import { useAllEntities } from "@/hooks/useEntities";
 import { StatCard, Card, EmptyState } from "@/components/ui-bits";
 import {
   fmtGB, fmtDate, timeAgo, lifecycleTone, criticalityTone, riskTone, badgeClass, StatusBadge,
-  detectCycles, criticalityMismatches, reconstructabilityIssues, resourceShortages, nodeAllocations, typedRefName,
+  nodeAllocations, typedRefName,
 } from "@/lib/homelab";
+import { runHealthChecks } from "@/lib/healthEngine";
+import FindingsList from "@/components/FindingsList";
 
-const LOAD = ["Node", "Workload", "ExecutionEnvironment", "StorageDevice", "NetworkDevice", "PlannedChange", "Task", "Maintenance", "Decision", "Dependency"];
+const LOAD = ["Node", "Workload", "ExecutionEnvironment", "StorageDevice", "StoragePool", "NetworkDevice", "PlannedChange", "Task", "Maintenance", "Decision", "Dependency"];
 
 const PIE_COLORS = ["#0ea5e9", "#8b5cf6", "#f59e0b", "#10b981", "#f43f5e", "#6366f1", "#ec4899", "#14b8a6", "#f97316", "#a3a3a3", "#84cc16"];
 
@@ -30,25 +32,22 @@ export default function Overview() {
   const decisions = data.Decision || [];
   const deps = data.Dependency || [];
 
+  const findings = useMemo(() => runHealthChecks(data), [data]);
+
   const stats = useMemo(() => {
     const activeNodes = nodes.filter((n) => !["retired", "planned"].includes(n.lifecycle_state));
     const totalRam = nodes.reduce((s, n) => s + (n.ram_capacity_gb || 0), 0);
     const totalCpu = nodes.reduce((s, n) => s + (n.logical_cpus || n.physical_cores || 0), 0);
     const totalVram = nodes.reduce((s, n) => s + (n.gpu_vram_gb || 0), 0);
     const usableStorage = storage.filter((s) => s.health !== "retired").reduce((s, d) => s + (d.capacity_gb || 0), 0);
-    const warnings = [
-      ...detectCycles(deps).map((c) => `Dependency cycle: ${c.join(" → ")}`),
-      ...criticalityMismatches(deps, workloads).map((m) => `Low-criticality "${m.target.name}" supports high-criticality "${m.source.name}"`),
-      ...reconstructabilityIssues(workloads, envs).map((r) => `"${r.workload.name}" marked reconstructable but env "${r.environment.name}" has persistent state`),
-      ...resourceShortages(workloads, nodes).map((r) => `"${r.workload.name}" needs more ${r.field} than ${r.node.hostname} provides`),
-    ];
+    const warnings = findings.filter((f) => f.severity !== "info");
     return {
       nodes: activeNodes.length, totalNodes: nodes.length, workloads: workloads.length,
       totalRam, totalCpu, totalVram, usableStorage,
       warnings, pendingChanges: changes.filter((c) => !["completed", "abandoned", "rolled_back"].includes(c.status)).length,
       openTasks: tasks.filter((t) => !["completed", "abandoned"].includes(t.status)).length,
     };
-  }, [nodes, workloads, envs, storage, changes, tasks, deps]);
+  }, [nodes, workloads, envs, storage, changes, tasks, deps, findings]);
 
   const ramByNode = nodes.map((n) => ({ name: n.hostname, allocated: nodeAllocations(n, workloads, envs).ram, total: n.ram_capacity_gb || 0 }));
   const cpuByNode = nodes.map((n) => ({ name: n.hostname, allocated: nodeAllocations(n, workloads, envs).cpu, total: n.logical_cpus || n.physical_cores || 0 }));
@@ -102,7 +101,7 @@ export default function Overview() {
         <StatCard label="Total RAM" value={fmtGB(stats.totalRam)} icon={MemoryStick} tone="amber" onClick={() => navigate("/capacity")} />
         <StatCard label="GPU VRAM" value={fmtGB(stats.totalVram)} icon={Monitor} tone="orange" onClick={() => navigate("/capacity")} />
         <StatCard label="Storage" value={fmtGB(stats.usableStorage)} sub="documented" icon={HardDrive} tone="sky" onClick={() => navigate("/storage")} />
-        <StatCard label="Warnings" value={stats.warnings.length} sub="unresolved" icon={AlertTriangle} tone={stats.warnings.length ? "rose" : "emerald"} onClick={() => navigate("/change-planner")} />
+        <StatCard label="Findings" value={stats.warnings.length} sub="deterministic" icon={AlertTriangle} tone={stats.warnings.length ? "rose" : "emerald"} onClick={() => navigate("/findings")} />
         <StatCard label="Open tasks" value={stats.openTasks} sub={`${stats.pendingChanges} pending changes`} icon={ListTodo} tone="amber" onClick={() => navigate("/tasks")} />
       </div>
 
@@ -185,18 +184,11 @@ export default function Overview() {
       {/* Sections grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
         {/* Architecture warnings */}
-        <Card title="Architecture warnings" className="p-4" actions={<ShieldAlert className="w-4 h-4 text-rose-500" />}>
+        <Card title="Architecture findings" className="p-4" actions={<button onClick={() => navigate("/findings")} className="text-xs text-muted-foreground hover:text-foreground">View all</button>}>
           {stats.warnings.length === 0 ? (
-            <EmptyState title="No warnings" sub="No cycles, criticality mismatches, or resource issues detected." />
+            <EmptyState title="No findings" sub="No deterministic findings from the current data." />
           ) : (
-            <ul className="space-y-2">
-              {stats.warnings.slice(0, 8).map((w, i) => (
-                <li key={i} className="flex items-start gap-2 text-sm">
-                  <AlertTriangle className="w-3.5 h-3.5 text-rose-500 mt-0.5 shrink-0" />
-                  <span>{w}</span>
-                </li>
-              ))}
-            </ul>
+            <FindingsList findings={stats.warnings.slice(0, 6)} />
           )}
         </Card>
 

@@ -59,8 +59,13 @@ export function stateClassTone(s) {
     case "inferred": return "amber";
     case "planned": return "fuchsia";
     case "documented": return "zinc";
+    case "sample": return "zinc";
     default: return "zinc";
   }
+}
+
+export function provenanceLabel(s) {
+  return ({ documented: "Declared", observed: "Observed", imported: "Imported", inferred: "Inferred", planned: "Planned", sample: "Sample" })[s] || s || "";
 }
 
 export function outcomeTone(o) {
@@ -273,73 +278,98 @@ export function nodeAllocations(node, workloads, environments) {
 // ---------- Placement scoring ----------
 // priorities order: simplicity, reliability, power_efficiency, scalability, performance
 export function scorePlacement(workload, node, opts = {}) {
-  const reasons = [];
-  let score = 100;
   const alloc = opts.currentAlloc || { cpu: 0, ram: 0, vram: 0, storage: 0 };
-
-  // Hard constraints (resource requirements)
+  const reasons = [];
+  const evidence = [];
+  const unknowns = [];
   const hardFails = [];
-  if (workload.ram_requirement_gb && node.ram_capacity_gb != null) {
-    const remaining = node.ram_capacity_gb - alloc.ram;
-    if (workload.ram_requirement_gb > remaining) { hardFails.push("RAM"); score -= 100; }
+  const priorities = [];
+  const vrank = { good: 0, warn: 1, bad: 2 };
+
+  // ---- Hard constraints: failure makes a candidate INELIGIBLE (not merely lower-scored) ----
+  const ramNeed = workload.ram_requirement_gb || 0;
+  const ramCap = node.ram_capacity_gb;
+  if (ramNeed > 0) {
+    if (ramCap == null) unknowns.push("Node RAM capacity not documented");
+    else if (ramNeed > ramCap - alloc.ram) { hardFails.push("RAM"); evidence.push(`RAM need ${ramNeed}GB > free ${(ramCap - alloc.ram).toFixed(0)}GB of ${ramCap}GB`); }
   }
-  if (workload.cpu_requirement && node.logical_cpus != null) {
-    const remaining = node.logical_cpus - alloc.cpu;
-    if (workload.cpu_requirement > remaining) { hardFails.push("CPU"); score -= 100; }
+  const cpuNeed = workload.cpu_requirement || 0;
+  const cpuCap = node.logical_cpus != null ? node.logical_cpus : node.physical_cores;
+  if (cpuNeed > 0) {
+    if (cpuCap == null) unknowns.push("Node CPU count not documented");
+    else if (cpuNeed > cpuCap - alloc.cpu) { hardFails.push("CPU"); evidence.push(`CPU need ${cpuNeed} > free ${cpuCap - alloc.cpu} of ${cpuCap}`); }
   }
-  if (workload.gpu_vram_requirement_gb && node.gpu_vram_gb != null) {
-    const remaining = node.gpu_vram_gb - alloc.vram;
-    if (workload.gpu_vram_requirement_gb > remaining) { hardFails.push("GPU VRAM"); score -= 100; }
+  const vramNeed = workload.gpu_vram_requirement_gb || 0;
+  const vramCap = node.gpu_vram_gb;
+  if (vramNeed > 0) {
+    if (!vramCap || vramCap === 0) { hardFails.push("GPU VRAM"); evidence.push(`Workload requires ${vramNeed}GB GPU VRAM but node has no documented GPU`); }
+    else if (vramNeed > vramCap - alloc.vram) { hardFails.push("GPU VRAM"); evidence.push(`GPU VRAM need ${vramNeed}GB > free ${(vramCap - alloc.vram).toFixed(0)}GB of ${vramCap}GB`); }
   }
+  if (workload.gpu_requirement && (!node.gpus || node.gpus.length === 0) && !vramNeed)
+    unknowns.push("Workload declares a GPU requirement but node GPU list is empty and no VRAM specified");
+
   if (hardFails.length) {
-    return { score: 0, hardFails, reasons: [`Insufficient ${hardFails.join(", ")} on ${node.hostname}`] };
-  }
-  if (workload.gpu_vram_requirement_gb && (!node.gpu_vram_gb || node.gpu_vram_gb === 0)) {
-    score -= 60; reasons.push("Node has no documented GPU VRAM but workload requires GPU");
+    return { eligible: false, score: 0, hardFails, reasons: [`Fails hard constraint: ${hardFails.join(", ")}`], evidence, unknowns, priorities: [], rankKey: "9" };
   }
 
-  // Soft constraints (architectural principles, weighted by priority order)
-  // 1. Simplicity — prefer preferred node, avoid introducing new dependency surface
-  if (workload.preferred_node === node.id) { score += 8; reasons.push("Matches preferred node (simplicity)"); }
-  else if (workload.eligible_alternative_nodes?.includes(node.id)) { score += 4; reasons.push("Listed as eligible alternative"); }
-  else { score -= 6; reasons.push("Not in preferred/eligible list (adds coordination surface)"); }
+  // ---- Priority evaluation in exact order: simplicity, reliability, power, scalability, performance ----
+  // 1. Simplicity
+  let simpVerdict = "good", simpDetail = "", simpScore = 80;
+  if (workload.preferred_node === node.id) { simpDetail = "Matches declared preferred node — no new coordination surface"; simpScore = 100; }
+  else if (workload.eligible_alternative_nodes?.includes(node.id)) { simpDetail = "Listed as an eligible alternative"; simpScore = 85; }
+  else { simpVerdict = "warn"; simpDetail = "Not in preferred/eligible list — placement here adds coordination surface"; simpScore = 50; }
+  if (node.node_type === "workstation" && workload.availability_requirement === "always_on") { simpVerdict = "bad"; simpDetail = "Always-on workload on a workstation conflicts with the simplicity principle"; simpScore = 20; }
+  priorities.push({ key: "simplicity", label: "Simplicity", verdict: simpVerdict, score: simpScore, detail: simpDetail });
 
-  // 2. Reliability — availability expectation vs node lifecycle
-  if (node.lifecycle_state === "active") { score += 6; }
-  else if (["degraded", "maintenance", "retiring", "retired"].includes(node.lifecycle_state)) { score -= 20; reasons.push(`Node lifecycle is ${node.lifecycle_state}`); }
-  if (workload.availability_requirement === "always_on" && node.availability_expectation !== "always_on") {
-    score -= 15; reasons.push("Always-on workload on non-always-on node (reliability risk)");
-  }
-  if (node.availability_expectation === "always_on") { score += 5; }
+  // 2. Reliability
+  let relVerdict = "good", relDetail = "", relScore = 80;
+  if (["degraded", "maintenance", "retiring", "retired"].includes(node.lifecycle_state)) { relVerdict = "bad"; relDetail = `Node lifecycle is ${node.lifecycle_state}`; relScore = 25; }
+  else if (node.lifecycle_state === "experimental") { relVerdict = "warn"; relDetail = "Node is experimental"; relScore = 55; }
+  else { relDetail = "Node lifecycle is healthy/active"; relScore = 85; }
+  if (workload.availability_requirement === "always_on" && node.availability_expectation !== "always_on") { relVerdict = "bad"; relDetail += " — always-on workload on a non-always-on node"; relScore = Math.min(relScore, 30); }
+  else if (node.availability_expectation === "always_on") { relScore = Math.min(100, relScore + 10); }
+  if ((workload.criticality === "critical" || workload.criticality === "high") && node.availability_expectation === "best_effort") { if (relVerdict !== "bad") relVerdict = "warn"; relDetail += " — high-criticality workload on best-effort node"; relScore = Math.min(relScore, 45); }
+  priorities.push({ key: "reliability", label: "Reliability", verdict: relVerdict, score: relScore, detail: relDetail });
 
-  // 3. Power efficiency — lower idle/max power is better
-  const idle = node.idle_power_w || 0;
-  if (idle > 0) {
-    if (idle <= 15) { score += 6; reasons.push("Very low idle power (efficient)"); }
-    else if (idle <= 60) { score += 2; }
-    else if (idle >= 200) { score -= 8; reasons.push("High idle power draw"); }
-  }
+  // 3. Power efficiency
+  let powVerdict = "good", powDetail = "", powScore = 70;
+  const idle = node.idle_power_w;
+  if (idle == null) { powVerdict = "warn"; powDetail = "Idle power not documented"; powScore = 50; }
+  else if (idle <= 15) { powDetail = `Very low idle power (${idle}W)`; powScore = 95; }
+  else if (idle <= 60) { powDetail = `Moderate idle power (${idle}W)`; powScore = 75; }
+  else if (idle >= 200) { powVerdict = "warn"; powDetail = `High idle power (${idle}W)`; powScore = 40; }
+  else { powDetail = `Idle power ${idle}W`; powScore = 65; }
+  priorities.push({ key: "power", label: "Power efficiency", verdict: powVerdict, score: powScore, detail: powDetail });
 
   // 4. Scalability — headroom after placement
-  if (node.ram_capacity_gb && workload.ram_requirement_gb) {
-    const remainPct = 1 - (alloc.ram + workload.ram_requirement_gb) / node.ram_capacity_gb;
-    if (remainPct > 0.5) { score += 4; reasons.push("Plenty of remaining capacity (scalable)"); }
-    else if (remainPct < 0.15) { score -= 8; reasons.push("Little headroom left after placement"); }
-  }
+  let scalVerdict = "good", scalDetail = "", scalScore = 70;
+  if (ramCap && ramNeed) {
+    const remainPct = 1 - (alloc.ram + ramNeed) / ramCap;
+    if (remainPct > 0.5) { scalDetail = `${Math.round(remainPct * 100)}% RAM headroom after placement`; scalScore = 90; }
+    else if (remainPct > 0.2) { scalDetail = `${Math.round(remainPct * 100)}% RAM headroom after placement`; scalScore = 70; }
+    else { scalVerdict = "warn"; scalDetail = `Only ${Math.round(remainPct * 100)}% RAM headroom after placement`; scalScore = 40; }
+  } else { scalVerdict = "warn"; scalDetail = "Insufficient capacity data to evaluate headroom"; scalScore = 50; unknowns.push("Scalability assessed on RAM only; storage headroom not modeled per node"); }
+  priorities.push({ key: "scalability", label: "Scalability", verdict: scalVerdict, score: scalScore, detail: scalDetail });
 
-  // 5. Performance — more cores / vram is better for demanding workloads
-  if (workload.category === "ai_inference" || workload.gpu_vram_requirement_gb) {
-    if (node.gpu_vram_gb && node.gpu_vram_gb >= (workload.gpu_vram_requirement_gb || 0) * 2) { score += 6; reasons.push("Strong GPU headroom (performance)"); }
-  }
-  if (workload.cpu_requirement && node.logical_cpus && node.logical_cpus >= workload.cpu_requirement * 4) { score += 3; }
+  // 5. Performance
+  let perfVerdict = "good", perfDetail = "", perfScore = 70;
+  if (vramNeed > 0) {
+    if (vramCap && vramCap >= vramNeed * 2) { perfDetail = `Strong GPU VRAM headroom (${vramCap}GB vs ${vramNeed}GB need)`; perfScore = 90; }
+    else if (vramCap) { perfVerdict = "warn"; perfDetail = `Limited GPU VRAM headroom (${vramCap}GB vs ${vramNeed}GB need)`; perfScore = 55; }
+  } else if (cpuNeed > 0 && cpuCap) {
+    if (cpuCap >= cpuNeed * 4) { perfDetail = `Strong CPU headroom (${cpuCap} vs ${cpuNeed} need)`; perfScore = 85; }
+    else if (cpuCap >= cpuNeed * 2) { perfDetail = "Adequate CPU headroom"; perfScore = 70; }
+    else { perfVerdict = "warn"; perfDetail = "Tight CPU headroom"; perfScore = 50; }
+  } else { perfVerdict = "warn"; perfDetail = "No demanding resource requirement declared"; perfScore = 60; }
+  priorities.push({ key: "performance", label: "Performance", verdict: perfVerdict, score: perfScore, detail: perfDetail });
 
-  // Architectural rule: avoid making a powerful workstation a mandatory always-on dependency
-  if (node.node_type === "workstation" && workload.availability_requirement === "always_on") {
-    score -= 25; reasons.push("Workstation as always-on dependency violates 'no mandatory always-on' principle");
-  }
+  // Composite score is display-only. Recommendation is lexicographic on priority order,
+  // so performance cannot override a simplicity/reliability disadvantage.
+  const score = Math.round(priorities.reduce((s, p) => s + p.score, 0) / priorities.length);
+  reasons.push(...priorities.map((p) => `${p.label}: ${p.detail}`));
+  const rankKey = priorities.map((p) => `${vrank[p.verdict]}${(100 - p.score).toString().padStart(3, "0")}`).join("|");
 
-  score = Math.max(0, Math.min(100, Math.round(score)));
-  return { score, hardFails: [], reasons };
+  return { eligible: true, score, hardFails: [], reasons, evidence, unknowns, priorities, rankKey };
 }
 
 // ---------- Global search ----------

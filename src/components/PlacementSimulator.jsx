@@ -35,9 +35,13 @@ export default function PlacementSimulator() {
         const ok = need <= free;
         return { ...r, need, total, free, ok, short: ok ? 0 : need - free };
       }).filter((c) => c.need > 0);
-      const hardFail = constraints.some((c) => !c.ok);
+      const hardFail = !res.eligible;
       return { node: n, res, alloc, constraints, hardFail };
-    }).sort((a, b) => b.res.score - a.res.score);
+    }).sort((a, b) => {
+      if (a.hardFail !== b.hardFail) return a.hardFail ? 1 : -1;
+      if (!a.hardFail) return (a.res.rankKey || "").localeCompare(b.res.rankKey || "");
+      return 0;
+    });
   }, [wl, nodes, workloads, envs]);
 
   const viable = results.filter((r) => !r.hardFail);
@@ -128,11 +132,29 @@ export default function PlacementSimulator() {
                   </div>
                 )}
 
-                {ok && (
+                {ok && r.res.priorities?.length > 0 && (
+                  <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                    {r.res.priorities.map((p) => {
+                      const tone = p.verdict === "good" ? "emerald" : p.verdict === "warn" ? "amber" : "rose";
+                      const Icon = p.verdict === "good" ? CheckCircle2 : p.verdict === "warn" ? AlertTriangle : XCircle;
+                      return (
+                        <div key={p.key} className="rounded-md border border-border p-2 text-xs">
+                          <div className="flex items-center gap-1.5">
+                            <Icon className={`w-3 h-3 ${tone === "emerald" ? "text-emerald-500" : tone === "amber" ? "text-amber-500" : "text-rose-500"}`} />
+                            <span className="font-medium">{p.label}</span>
+                            <span className="ml-auto capitalize text-muted-foreground">{p.verdict}</span>
+                          </div>
+                          <div className="text-muted-foreground mt-1">{p.detail}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                {ok && r.res.unknowns?.length > 0 && (
                   <ul className="mt-2 space-y-1">
-                    {r.res.reasons.map((reason, i) => (
-                      <li key={i} className="text-xs flex items-start gap-2 text-muted-foreground">
-                        <span className="w-1 h-1 rounded-full bg-current mt-1.5 shrink-0" />{reason}
+                    {r.res.unknowns.map((u, i) => (
+                      <li key={i} className="text-[11px] flex items-start gap-2 text-muted-foreground italic">
+                        <span className="w-1 h-1 rounded-full bg-current mt-1.5 shrink-0" />unknown: {u}
                       </li>
                     ))}
                   </ul>
@@ -143,8 +165,10 @@ export default function PlacementSimulator() {
         </div>
       )}
 
-      <div className="mt-4 text-[11px] text-muted-foreground">
-        Scoring priority order: simplicity → reliability → power efficiency → scalability → performance. Resource requirements are hard constraints; architectural principles are soft constraints. Allocation excludes the workload's own current footprint so re-placement is scored accurately.
+      <div className="mt-4 text-[11px] text-muted-foreground space-y-1">
+        <div>Hard constraints (RAM, CPU, GPU VRAM, GPU presence) make a candidate <span className="text-rose-500 font-medium">ineligible</span> — they disqualify, they are not merely scored down.</div>
+        <div>Eligible candidates are ranked lexicographically by priority order — simplicity → reliability → power efficiency → scalability → performance — so a performance advantage cannot override a simplicity or reliability disadvantage.</div>
+        <div>Allocation excludes the workload's own current footprint so re-placement is scored accurately. The simulator never makes infrastructure changes.</div>
       </div>
     </div>
   );
