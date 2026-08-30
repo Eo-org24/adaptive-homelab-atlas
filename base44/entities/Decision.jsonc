@@ -1,0 +1,84 @@
+{
+  "name": "Decision",
+  "type": "object",
+  "properties": {
+    "decision_id": {
+      "type": "string",
+      "title": "Decision ID"
+    },
+    "title": {
+      "type": "string",
+      "title": "Title"
+    },
+    "context": {
+      "type": "string",
+      "title": "Context"
+    },
+    "decision": {
+      "type": "string",
+      "title": "Decision"
+    },
+    "rationale": {
+      "type": "string",
+      "title": "Rationale"
+    },
+    "alternatives": {
+      "type": "string",
+      "title": "Alternatives considered"
+    },
+    "consequences": {
+      "type": "string",
+      "title": "Consequences"
+    },
+    "status": {
+      "type": "string",
+      "title": "Status",
+      "enum": [
+        "proposed",
+        "accepted",
+        "rejected",
+        "deprecated",
+        "superseded"
+      ],
+      "default": "proposed"
+    },
+    "date": {
+      "type": "string",
+      "format": "date",
+      "title": "Date"
+    },
+    "supersedes": {
+      "type": "string",
+      "title": "Supersedes"
+    },
+    "superseded_by": {
+      "type": "string",
+      "title": "Superseded by"
+    },
+    "related_nodes": {
+      "type": "array",
+      "title": "Related nodes",
+      "items": {
+        "type": "string"
+      }
+    },
+    "related_workloads": {
+      "type": "array",
+      "title": "Related workloads",
+      "items": {
+        "type": "string"
+      }
+    },
+    "tags": {
+      "type": "array",
+      "title": "Tags",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "decision_id",
+    "title"
+  ]
+}

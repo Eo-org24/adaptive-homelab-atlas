@@ -1,0 +1,147 @@
+{
+  "name": "Node",
+  "type": "object",
+  "properties": {
+    "hostname": {
+      "type": "string",
+      "title": "Canonical hostname"
+    },
+    "description": {
+      "type": "string",
+      "title": "Friendly description"
+    },
+    "node_type": {
+      "type": "string",
+      "title": "Node type",
+      "enum": [
+        "workstation",
+        "server",
+        "hypervisor",
+        "utility",
+        "appliance",
+        "other"
+      ],
+      "default": "server"
+    },
+    "manufacturer": {
+      "type": "string",
+      "title": "Manufacturer"
+    },
+    "model": {
+      "type": "string",
+      "title": "Model"
+    },
+    "motherboard": {
+      "type": "string",
+      "title": "Motherboard"
+    },
+    "cpu_model": {
+      "type": "string",
+      "title": "CPU model"
+    },
+    "socket_count": {
+      "type": "number",
+      "title": "Socket count",
+      "default": 1
+    },
+    "physical_cores": {
+      "type": "number",
+      "title": "Physical cores"
+    },
+    "logical_cpus": {
+      "type": "number",
+      "title": "Logical CPUs"
+    },
+    "ram_capacity_gb": {
+      "type": "number",
+      "title": "RAM capacity (GB)"
+    },
+    "ram_configuration": {
+      "type": "string",
+      "title": "RAM configuration"
+    },
+    "gpus": {
+      "type": "array",
+      "title": "GPU list",
+      "items": {
+        "type": "string"
+      }
+    },
+    "gpu_vram_gb": {
+      "type": "number",
+      "title": "Total GPU VRAM (GB)",
+      "default": 0
+    },
+    "nics": {
+      "type": "array",
+      "title": "NIC list",
+      "items": {
+        "type": "string"
+      }
+    },
+    "power_supply": {
+      "type": "string",
+      "title": "Power supply"
+    },
+    "idle_power_w": {
+      "type": "number",
+      "title": "Estimated idle power (W)"
+    },
+    "max_power_w": {
+      "type": "number",
+      "title": "Estimated maximum power (W)"
+    },
+    "os_hypervisor": {
+      "type": "string",
+      "title": "OS / Hypervisor"
+    },
+    "management_address": {
+      "type": "string",
+      "title": "Management address"
+    },
+    "lifecycle_state": {
+      "type": "string",
+      "title": "Lifecycle state",
+      "enum": [
+        "planned",
+        "onboarding",
+        "active",
+        "experimental",
+        "maintenance",
+        "degraded",
+        "retiring",
+        "retired"
+      ],
+      "default": "active"
+    },
+    "availability_expectation": {
+      "type": "string",
+      "title": "Availability expectation",
+      "enum": [
+        "always_on",
+        "business_hours",
+        "on_demand",
+        "best_effort"
+      ],
+      "default": "best_effort"
+    },
+    "physical_location": {
+      "type": "string",
+      "title": "Physical location"
+    },
+    "notes": {
+      "type": "string",
+      "title": "Notes"
+    },
+    "tags": {
+      "type": "array",
+      "title": "Tags",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "hostname"
+  ]
+}

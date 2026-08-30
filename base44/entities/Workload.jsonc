@@ -1,0 +1,160 @@
+{
+  "name": "Workload",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "title": "Canonical name"
+    },
+    "description": {
+      "type": "string",
+      "title": "Description"
+    },
+    "category": {
+      "type": "string",
+      "title": "Category",
+      "enum": [
+        "infrastructure",
+        "networking",
+        "storage",
+        "observability",
+        "ai_inference",
+        "ai_tooling",
+        "automation",
+        "documentation",
+        "development",
+        "experimental",
+        "user_application"
+      ],
+      "default": "user_application"
+    },
+    "current_environment": {
+      "type": "string",
+      "title": "Current execution environment (id)"
+    },
+    "current_environment_name": {
+      "type": "string",
+      "title": "Current environment name"
+    },
+    "current_host": {
+      "type": "string",
+      "title": "Current host node (id)"
+    },
+    "current_host_name": {
+      "type": "string",
+      "title": "Current host name"
+    },
+    "preferred_node": {
+      "type": "string",
+      "title": "Preferred node (id)"
+    },
+    "preferred_node_name": {
+      "type": "string",
+      "title": "Preferred node name"
+    },
+    "eligible_alternative_nodes": {
+      "type": "array",
+      "title": "Eligible alternative nodes",
+      "items": {
+        "type": "string"
+      }
+    },
+    "cpu_requirement": {
+      "type": "number",
+      "title": "CPU requirement (cores)"
+    },
+    "ram_requirement_gb": {
+      "type": "number",
+      "title": "RAM requirement (GB)"
+    },
+    "gpu_requirement": {
+      "type": "string",
+      "title": "GPU requirement"
+    },
+    "gpu_vram_requirement_gb": {
+      "type": "number",
+      "title": "GPU VRAM requirement (GB)"
+    },
+    "storage_requirement_gb": {
+      "type": "number",
+      "title": "Storage requirement (GB)"
+    },
+    "network_requirement": {
+      "type": "string",
+      "title": "Network requirement"
+    },
+    "availability_requirement": {
+      "type": "string",
+      "title": "Availability requirement",
+      "enum": [
+        "always_on",
+        "business_hours",
+        "on_demand",
+        "best_effort"
+      ],
+      "default": "best_effort"
+    },
+    "state_classification": {
+      "type": "string",
+      "title": "State classification",
+      "enum": [
+        "documented",
+        "observed",
+        "imported",
+        "inferred",
+        "planned"
+      ],
+      "default": "documented"
+    },
+    "criticality": {
+      "type": "string",
+      "title": "Criticality",
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ],
+      "default": "medium"
+    },
+    "lifecycle": {
+      "type": "string",
+      "title": "Lifecycle",
+      "enum": [
+        "planned",
+        "onboarding",
+        "active",
+        "experimental",
+        "maintenance",
+        "degraded",
+        "retiring",
+        "retired"
+      ],
+      "default": "active"
+    },
+    "reconstructable": {
+      "type": "boolean",
+      "title": "Reconstructable",
+      "default": true
+    },
+    "backup_requirement": {
+      "type": "string",
+      "title": "Backup requirement"
+    },
+    "notes": {
+      "type": "string",
+      "title": "Notes"
+    },
+    "tags": {
+      "type": "array",
+      "title": "Tags",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "name",
+    "category"
+  ]
+}

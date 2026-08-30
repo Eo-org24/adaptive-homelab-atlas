@@ -1,0 +1,92 @@
+{
+  "name": "SwitchPort",
+  "type": "object",
+  "properties": {
+    "device": {
+      "type": "string",
+      "title": "Device (id)"
+    },
+    "device_name": {
+      "type": "string",
+      "title": "Device name"
+    },
+    "port_identifier": {
+      "type": "string",
+      "title": "Port identifier"
+    },
+    "description": {
+      "type": "string",
+      "title": "Description"
+    },
+    "speed": {
+      "type": "string",
+      "title": "Speed",
+      "enum": [
+        "10M",
+        "100M",
+        "1G",
+        "2.5G",
+        "10G",
+        "25G",
+        "40G",
+        "100G",
+        "unknown"
+      ],
+      "default": "1G"
+    },
+    "media": {
+      "type": "string",
+      "title": "Media",
+      "enum": [
+        "copper",
+        "fiber",
+        "sfp",
+        "sfp28",
+        "qsfp",
+        "unknown"
+      ],
+      "default": "copper"
+    },
+    "connected_device": {
+      "type": "string",
+      "title": "Connected device"
+    },
+    "connected_interface": {
+      "type": "string",
+      "title": "Connected interface"
+    },
+    "vlan_network": {
+      "type": "string",
+      "title": "VLAN / Network"
+    },
+    "admin_state": {
+      "type": "string",
+      "title": "Administrative state",
+      "enum": [
+        "enabled",
+        "disabled",
+        "planned"
+      ],
+      "default": "enabled"
+    },
+    "observed_link_state": {
+      "type": "string",
+      "title": "Observed link state",
+      "enum": [
+        "up",
+        "down",
+        "unknown",
+        "planned"
+      ],
+      "default": "unknown"
+    },
+    "notes": {
+      "type": "string",
+      "title": "Notes"
+    }
+  },
+  "required": [
+    "device",
+    "port_identifier"
+  ]
+}

@@ -1,0 +1,100 @@
+{
+  "name": "Task",
+  "type": "object",
+  "properties": {
+    "task": {
+      "type": "string",
+      "title": "Task"
+    },
+    "category": {
+      "type": "string",
+      "title": "Category",
+      "enum": [
+        "immediate",
+        "blocked",
+        "experiments",
+        "hardware",
+        "network",
+        "ai",
+        "foundation",
+        "other"
+      ],
+      "default": "other"
+    },
+    "priority": {
+      "type": "string",
+      "title": "Priority",
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ],
+      "default": "medium"
+    },
+    "related_object_type": {
+      "type": "string",
+      "title": "Related object type",
+      "enum": [
+        "node",
+        "workload",
+        "environment",
+        "network_device",
+        "storage",
+        "change",
+        "decision"
+      ],
+      "default": "node"
+    },
+    "related_object_id": {
+      "type": "string",
+      "title": "Related object id"
+    },
+    "related_object_name": {
+      "type": "string",
+      "title": "Related object name"
+    },
+    "status": {
+      "type": "string",
+      "title": "Status",
+      "enum": [
+        "backlog",
+        "ready",
+        "blocked",
+        "active",
+        "verify",
+        "completed",
+        "abandoned"
+      ],
+      "default": "backlog"
+    },
+    "dependency": {
+      "type": "string",
+      "title": "Dependency"
+    },
+    "effort": {
+      "type": "string",
+      "title": "Effort",
+      "enum": [
+        "trivial",
+        "small",
+        "medium",
+        "large",
+        "unknown"
+      ],
+      "default": "small"
+    },
+    "target_date": {
+      "type": "string",
+      "format": "date",
+      "title": "Target date"
+    },
+    "notes": {
+      "type": "string",
+      "title": "Notes"
+    }
+  },
+  "required": [
+    "task"
+  ]
+}

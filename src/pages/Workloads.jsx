@@ -1,0 +1,113 @@
+import React, { useMemo } from "react";
+import EntityCrudPage from "@/components/EntityCrudPage";
+import { useAllEntities } from "@/hooks/useEntities";
+import { RelatedList, SpecGrid, Section } from "@/components/Related";
+import { fmtGB, lifecycleTone, criticalityTone, stateClassTone, badgeClass, StatusBadge, fmtDate } from "@/lib/homelab";
+
+const COLUMNS = [
+  { key: "name", label: "Name", className: "font-medium", mono: true },
+  { key: "category", label: "Category", render: (r) => <span className="capitalize text-xs">{(r.category || "").replace(/_/g, " ")}</span> },
+  { key: "criticality", label: "Criticality", render: (r) => <StatusBadge value={r.criticality} tone={criticalityTone(r.criticality)} /> },
+  { key: "host", label: "Host", get: (r) => r.current_host_name, render: (r) => <span className="text-xs">{r.current_host_name || "—"}</span> },
+  { key: "lifecycle", label: "Lifecycle", render: (r) => <StatusBadge value={r.lifecycle} tone={lifecycleTone(r.lifecycle)} /> },
+  { key: "state", label: "State class", render: (r) => <StatusBadge value={r.state_classification} tone={stateClassTone(r.state_classification)} /> },
+  { key: "ram", label: "RAM", get: (r) => fmtGB(r.ram_requirement_gb), render: (r) => fmtGB(r.ram_requirement_gb) },
+];
+
+export default function Workloads() {
+  const { data } = useAllEntities(["Node", "ExecutionEnvironment", "Dependency", "Maintenance", "PlannedChange", "Decision"]);
+  const nodes = data.Node || [];
+  const envs = data.ExecutionEnvironment || [];
+  const deps = data.Dependency || [];
+  const maintenance = data.Maintenance || [];
+  const changes = data.PlannedChange || [];
+
+  const refOptions = useMemo(() => ({
+    current_host: nodes.map((n) => ({ value: n.id, label: n.hostname })),
+    preferred_node: nodes.map((n) => ({ value: n.id, label: n.hostname })),
+    current_environment: envs.map((e) => ({ value: e.id, label: `${e.name} (${e.type})` })),
+    eligible_alternative_nodes: undefined,
+  }), [nodes, envs]);
+
+  const detailRender = (w, { goTo }) => {
+    const outDeps = deps.filter((d) => d.source_type === "workload" && d.source_id === w.id);
+    const inDeps = deps.filter((d) => d.target_type === "workload" && d.target_id === w.id);
+    return (
+      <div className="space-y-4">
+        {w.description && <p className="text-sm text-muted-foreground">{w.description}</p>}
+        <SpecGrid fields={[
+          { label: "Category", value: (w.category || "").replace(/_/g, " ") },
+          { label: "Criticality", value: <StatusBadge value={w.criticality} tone={criticalityTone(w.criticality)} /> },
+          { label: "Lifecycle", value: <StatusBadge value={w.lifecycle} tone={lifecycleTone(w.lifecycle)} /> },
+          { label: "State class", value: <StatusBadge value={w.state_classification} tone={stateClassTone(w.state_classification)} /> },
+          { label: "Current host", value: w.current_host_name || "—" },
+          { label: "Environment", value: w.current_environment_name || "—" },
+          { label: "Preferred node", value: w.preferred_node_name || "—" },
+          { label: "Availability", value: (w.availability_requirement || "").replace(/_/g, " ") },
+          { label: "CPU req", value: w.cpu_requirement ? `${w.cpu_requirement} cores` : "—" },
+          { label: "RAM req", value: fmtGB(w.ram_requirement_gb) },
+          { label: "GPU req", value: w.gpu_requirement || "—" },
+          { label: "GPU VRAM req", value: fmtGB(w.gpu_vram_requirement_gb) },
+          { label: "Storage req", value: fmtGB(w.storage_requirement_gb) },
+          { label: "Network req", value: w.network_requirement || "—" },
+          { label: "Reconstructable", value: w.reconstructable ? "Yes" : "No" },
+          { label: "Backup req", value: w.backup_requirement || "—" },
+        ]} />
+        {(w.eligible_alternative_nodes || []).length > 0 && (
+          <Section title="Eligible alternative nodes">
+            <div className="flex flex-wrap gap-1.5">
+              {w.eligible_alternative_nodes.map((id) => {
+                const n = nodes.find((x) => x.id === id);
+                return n ? <span key={id} className={badgeClass("sky")}>{n.hostname}</span> : null;
+              })}
+            </div>
+          </Section>
+        )}
+        {(w.tags || []).length > 0 && <div className="flex flex-wrap gap-1.5">{w.tags.map((t) => <span key={t} className={badgeClass("zinc")}>{t}</span>)}</div>}
+        {w.notes && <Section title="Notes"><p className="text-sm whitespace-pre-wrap">{w.notes}</p></Section>}
+
+        <Section title={`Dependencies (outgoing: ${outDeps.length})`}>
+          <RelatedList items={outDeps} route="/workloads" label={(d) => `${d.target_type.replace(/_/g, " ")} → ${d.target_name}`} status={(d) => d.kind} goTo={goTo} emptyMsg="No outgoing dependencies" />
+        </Section>
+        <Section title={`Depended on by (incoming: ${inDeps.length})`}>
+          <RelatedList items={inDeps} route="/workloads" label={(d) => `${d.source_name} ← depends on this`} status={(d) => d.kind} goTo={goTo} emptyMsg="Nothing depends on this workload" />
+        </Section>
+        <Section title="Maintenance history">
+          <RelatedList items={maintenance.filter((m) => m.target_id === w.id)} route="/maintenance" label={(m) => `${m.type} — ${m.target_name}`} sub={(m) => fmtDate(m.timestamp)} status={(m) => m.outcome} goTo={goTo} emptyMsg="No maintenance" />
+        </Section>
+        <Section title="Affected by changes">
+          <RelatedList items={changes.filter((c) => (c.affected_workloads || []).includes(w.id))} route="/change-planner" label={(c) => c.title} status={(c) => c.status} tone={(c) => lifecycleTone(c.status)} goTo={goTo} />
+        </Section>
+      </div>
+    );
+  };
+
+  return (
+    <EntityCrudPage
+      entityName="Workload"
+      title="Workloads"
+      description="Logical services and their resource requirements, dependencies, and lifecycle."
+      columns={COLUMNS}
+      searchKeys={["name", "description", "category", "notes"]}
+      filters={[
+        { key: "category", label: "Category", options: ["infrastructure", "networking", "storage", "observability", "ai_inference", "ai_tooling", "automation", "documentation", "development", "experimental", "user_application"].map((v) => ({ value: v, label: v.replace(/_/g, " ") })) },
+        { key: "criticality", label: "Criticality", options: ["low", "medium", "high", "critical"].map((v) => ({ value: v })) },
+        { key: "lifecycle", label: "Lifecycle", options: ["planned", "onboarding", "active", "experimental", "maintenance", "degraded", "retiring", "retired"].map((v) => ({ value: v })) },
+      ]}
+      refOptions={refOptions}
+      hidden={["current_host_name", "current_environment_name", "preferred_node_name"]}
+      exportColumns={[
+        { label: "Name", get: (r) => r.name },
+        { label: "Category", get: (r) => r.category },
+        { label: "Criticality", get: (r) => r.criticality },
+        { label: "Host", get: (r) => r.current_host_name },
+        { label: "Lifecycle", get: (r) => r.lifecycle },
+        { label: "CPU", get: (r) => r.cpu_requirement },
+        { label: "RAM GB", get: (r) => r.ram_requirement_gb },
+        { label: "GPU VRAM GB", get: (r) => r.gpu_vram_requirement_gb },
+        { label: "Storage GB", get: (r) => r.storage_requirement_gb },
+      ]}
+      detailRender={detailRender}
+    />
+  );
+}

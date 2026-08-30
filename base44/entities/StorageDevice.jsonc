@@ -1,0 +1,111 @@
+{
+  "name": "StorageDevice",
+  "type": "object",
+  "properties": {
+    "manufacturer": {
+      "type": "string",
+      "title": "Manufacturer"
+    },
+    "model": {
+      "type": "string",
+      "title": "Model"
+    },
+    "serial_number": {
+      "type": "string",
+      "title": "Serial number"
+    },
+    "capacity_gb": {
+      "type": "number",
+      "title": "Capacity (GB)"
+    },
+    "media_type": {
+      "type": "string",
+      "title": "Media type",
+      "enum": [
+        "hdd",
+        "ssd",
+        "nvme",
+        "sd",
+        "other"
+      ],
+      "default": "ssd"
+    },
+    "protocol": {
+      "type": "string",
+      "title": "Protocol",
+      "enum": [
+        "sata",
+        "sas",
+        "nvme",
+        "usb",
+        "other"
+      ],
+      "default": "sata"
+    },
+    "firmware": {
+      "type": "string",
+      "title": "Firmware"
+    },
+    "current_node": {
+      "type": "string",
+      "title": "Current node (id)"
+    },
+    "current_node_name": {
+      "type": "string",
+      "title": "Current node name"
+    },
+    "physical_bay": {
+      "type": "string",
+      "title": "Physical bay / location"
+    },
+    "health": {
+      "type": "string",
+      "title": "Health classification",
+      "enum": [
+        "healthy",
+        "warning",
+        "failing",
+        "unknown",
+        "retired"
+      ],
+      "default": "healthy"
+    },
+    "intended_purpose": {
+      "type": "string",
+      "title": "Intended purpose"
+    },
+    "state_class": {
+      "type": "string",
+      "title": "State class",
+      "enum": [
+        "documented",
+        "observed",
+        "imported",
+        "inferred",
+        "planned"
+      ],
+      "default": "documented"
+    },
+    "purchase_notes": {
+      "type": "string",
+      "title": "Purchase / source notes"
+    },
+    "commissioning_date": {
+      "type": "string",
+      "format": "date",
+      "title": "Commissioning date"
+    },
+    "retirement_date": {
+      "type": "string",
+      "format": "date",
+      "title": "Retirement date"
+    },
+    "notes": {
+      "type": "string",
+      "title": "Notes"
+    }
+  },
+  "required": [
+    "model"
+  ]
+}

@@ -1,0 +1,77 @@
+{
+  "name": "ExecutionEnvironment",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "title": "Name"
+    },
+    "type": {
+      "type": "string",
+      "title": "Type",
+      "enum": [
+        "physical_host",
+        "vm",
+        "lxc",
+        "docker",
+        "podman",
+        "kubernetes",
+        "external_service"
+      ],
+      "default": "vm"
+    },
+    "current_host": {
+      "type": "string",
+      "title": "Current host node (id)"
+    },
+    "current_host_name": {
+      "type": "string",
+      "title": "Current host name"
+    },
+    "cpu_allocation": {
+      "type": "number",
+      "title": "CPU allocation (cores)"
+    },
+    "ram_allocation_gb": {
+      "type": "number",
+      "title": "RAM allocation (GB)"
+    },
+    "storage_allocation_gb": {
+      "type": "number",
+      "title": "Storage allocation (GB)"
+    },
+    "lifecycle": {
+      "type": "string",
+      "title": "Lifecycle",
+      "enum": [
+        "planned",
+        "onboarding",
+        "active",
+        "experimental",
+        "maintenance",
+        "degraded",
+        "retiring",
+        "retired"
+      ],
+      "default": "active"
+    },
+    "reconstructable": {
+      "type": "boolean",
+      "title": "Reconstructable",
+      "default": true
+    },
+    "persistent_state": {
+      "type": "boolean",
+      "title": "Persistent state",
+      "default": false
+    },
+    "notes": {
+      "type": "string",
+      "title": "Notes"
+    }
+  },
+  "required": [
+    "name",
+    "type"
+  ]
+}

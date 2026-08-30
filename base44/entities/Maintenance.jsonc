@@ -1,0 +1,90 @@
+{
+  "name": "Maintenance",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "title": "Maintenance type",
+      "enum": [
+        "installation",
+        "configuration",
+        "firmware",
+        "diagnostics",
+        "repair",
+        "upgrade",
+        "migration",
+        "cleaning",
+        "decommissioning"
+      ],
+      "default": "configuration"
+    },
+    "target_type": {
+      "type": "string",
+      "title": "Target type",
+      "enum": [
+        "node",
+        "workload",
+        "environment",
+        "network_device",
+        "storage"
+      ],
+      "default": "node"
+    },
+    "target_id": {
+      "type": "string",
+      "title": "Target id"
+    },
+    "target_name": {
+      "type": "string",
+      "title": "Target name"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Timestamp"
+    },
+    "description": {
+      "type": "string",
+      "title": "Description"
+    },
+    "before_state": {
+      "type": "string",
+      "title": "Before state"
+    },
+    "actions": {
+      "type": "string",
+      "title": "Actions performed"
+    },
+    "after_state": {
+      "type": "string",
+      "title": "After state"
+    },
+    "outcome": {
+      "type": "string",
+      "title": "Outcome",
+      "enum": [
+        "success",
+        "partial",
+        "failed",
+        "aborted",
+        "pending"
+      ],
+      "default": "success"
+    },
+    "operator_notes": {
+      "type": "string",
+      "title": "Operator notes"
+    },
+    "attachments": {
+      "type": "array",
+      "title": "Attachments",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "type",
+    "target_name"
+  ]
+}

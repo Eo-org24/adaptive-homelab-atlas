@@ -1,0 +1,65 @@
+{
+  "name": "Dependency",
+  "type": "object",
+  "properties": {
+    "source_type": {
+      "type": "string",
+      "title": "Source type",
+      "enum": [
+        "workload",
+        "environment",
+        "node"
+      ],
+      "default": "workload"
+    },
+    "source_id": {
+      "type": "string",
+      "title": "Source id"
+    },
+    "source_name": {
+      "type": "string",
+      "title": "Source name"
+    },
+    "target_type": {
+      "type": "string",
+      "title": "Target type",
+      "enum": [
+        "workload",
+        "environment",
+        "node",
+        "network_service",
+        "storage",
+        "external"
+      ],
+      "default": "workload"
+    },
+    "target_id": {
+      "type": "string",
+      "title": "Target id"
+    },
+    "target_name": {
+      "type": "string",
+      "title": "Target name"
+    },
+    "kind": {
+      "type": "string",
+      "title": "Kind",
+      "enum": [
+        "hard",
+        "soft",
+        "optional"
+      ],
+      "default": "hard"
+    },
+    "notes": {
+      "type": "string",
+      "title": "Notes"
+    }
+  },
+  "required": [
+    "source_type",
+    "source_id",
+    "target_type",
+    "target_id"
+  ]
+}

@@ -6,7 +6,25 @@ import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import ScrollToTop from './components/ScrollToTop';
-// Add page imports here
+import { Navigate } from 'react-router-dom';
+import ProtectedRoute from '@/components/ProtectedRoute';
+import Layout from '@/components/Layout';
+import Overview from '@/pages/Overview';
+import Nodes from '@/pages/Nodes';
+import Workloads from '@/pages/Workloads';
+import Network from '@/pages/Network';
+import Storage from '@/pages/Storage';
+import Capacity from '@/pages/Capacity';
+import ChangePlanner from '@/pages/ChangePlanner';
+import Decisions from '@/pages/Decisions';
+import Maintenance from '@/pages/Maintenance';
+import Tasks from '@/pages/Tasks';
+import Activity from '@/pages/Activity';
+import Settings from '@/pages/Settings';
+import Login from '@/pages/Login';
+import Register from '@/pages/Register';
+import ForgotPassword from '@/pages/ForgotPassword';
+import ResetPassword from '@/pages/ResetPassword';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -34,7 +52,26 @@ const AuthenticatedApp = () => {
   // Render the main app
   return (
     <Routes>
-      {/* Add your page Route elements here */}
+      <Route path="/login" element={<Login />} />
+      <Route path="/register" element={<Register />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
+      <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
+        <Route element={<Layout />}>
+          <Route path="/" element={<Overview />} />
+          <Route path="/nodes" element={<Nodes />} />
+          <Route path="/workloads" element={<Workloads />} />
+          <Route path="/network" element={<Network />} />
+          <Route path="/storage" element={<Storage />} />
+          <Route path="/capacity" element={<Capacity />} />
+          <Route path="/change-planner" element={<ChangePlanner />} />
+          <Route path="/decisions" element={<Decisions />} />
+          <Route path="/maintenance" element={<Maintenance />} />
+          <Route path="/tasks" element={<Tasks />} />
+          <Route path="/activity" element={<Activity />} />
+          <Route path="/settings" element={<Settings />} />
+        </Route>
+      </Route>
       <Route path="*" element={<PageNotFound />} />
     </Routes>
   );

@@ -1,0 +1,65 @@
+{
+  "name": "StoragePool",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "title": "Pool name"
+    },
+    "node": {
+      "type": "string",
+      "title": "Node (id)"
+    },
+    "node_name": {
+      "type": "string",
+      "title": "Node name"
+    },
+    "device_ids": {
+      "type": "array",
+      "title": "Participating devices",
+      "items": {
+        "type": "string"
+      }
+    },
+    "raid_level": {
+      "type": "string",
+      "title": "RAID level",
+      "enum": [
+        "single",
+        "raid0",
+        "raid1",
+        "raid5",
+        "raid6",
+        "raid10",
+        "zfs_mirror",
+        "zfs_raidz1",
+        "zfs_raidz2",
+        "other"
+      ],
+      "default": "single"
+    },
+    "usable_capacity_gb": {
+      "type": "number",
+      "title": "Usable capacity (GB)"
+    },
+    "state": {
+      "type": "string",
+      "title": "State",
+      "enum": [
+        "active",
+        "degraded",
+        "maintenance",
+        "planned",
+        "retired"
+      ],
+      "default": "active"
+    },
+    "notes": {
+      "type": "string",
+      "title": "Notes"
+    }
+  },
+  "required": [
+    "name"
+  ]
+}

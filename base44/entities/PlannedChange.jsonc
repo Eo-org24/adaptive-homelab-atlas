@@ -1,0 +1,87 @@
+{
+  "name": "PlannedChange",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "title": "Title"
+    },
+    "reason": {
+      "type": "string",
+      "title": "Reason"
+    },
+    "affected_nodes": {
+      "type": "array",
+      "title": "Affected nodes",
+      "items": {
+        "type": "string"
+      }
+    },
+    "affected_workloads": {
+      "type": "array",
+      "title": "Affected workloads",
+      "items": {
+        "type": "string"
+      }
+    },
+    "proposed_actions": {
+      "type": "string",
+      "title": "Proposed actions"
+    },
+    "prerequisites": {
+      "type": "string",
+      "title": "Prerequisites"
+    },
+    "expected_result": {
+      "type": "string",
+      "title": "Expected result"
+    },
+    "risk": {
+      "type": "string",
+      "title": "Risk",
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "default": "medium"
+    },
+    "rollback_strategy": {
+      "type": "string",
+      "title": "Rollback strategy"
+    },
+    "status": {
+      "type": "string",
+      "title": "Status",
+      "enum": [
+        "idea",
+        "proposed",
+        "accepted",
+        "ready",
+        "executing",
+        "verifying",
+        "completed",
+        "rolled_back",
+        "abandoned"
+      ],
+      "default": "idea"
+    },
+    "planned_date": {
+      "type": "string",
+      "format": "date",
+      "title": "Planned date"
+    },
+    "actual_completion_date": {
+      "type": "string",
+      "format": "date",
+      "title": "Actual completion date"
+    },
+    "notes": {
+      "type": "string",
+      "title": "Notes"
+    }
+  },
+  "required": [
+    "title"
+  ]
+}

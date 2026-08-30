@@ -1,0 +1,74 @@
+{
+  "name": "NetworkDevice",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "title": "Name"
+    },
+    "type": {
+      "type": "string",
+      "title": "Type",
+      "enum": [
+        "router",
+        "switch",
+        "firewall",
+        "access_point",
+        "server_nic",
+        "management_controller",
+        "other"
+      ],
+      "default": "switch"
+    },
+    "manufacturer": {
+      "type": "string",
+      "title": "Manufacturer"
+    },
+    "model": {
+      "type": "string",
+      "title": "Model"
+    },
+    "management_address": {
+      "type": "string",
+      "title": "Management address"
+    },
+    "port_count": {
+      "type": "number",
+      "title": "Port count"
+    },
+    "location": {
+      "type": "string",
+      "title": "Location"
+    },
+    "lifecycle_state": {
+      "type": "string",
+      "title": "Lifecycle state",
+      "enum": [
+        "planned",
+        "onboarding",
+        "active",
+        "experimental",
+        "maintenance",
+        "degraded",
+        "retiring",
+        "retired"
+      ],
+      "default": "active"
+    },
+    "notes": {
+      "type": "string",
+      "title": "Notes"
+    },
+    "tags": {
+      "type": "array",
+      "title": "Tags",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "name",
+    "type"
+  ]
+}
