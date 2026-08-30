@@ -1,0 +1,55 @@
+{
+  "name": "CanonicalSync",
+  "type": "object",
+  "properties": {
+    "source_repository": {
+      "type": "string",
+      "title": "Source repository"
+    },
+    "last_import_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Last canonical import"
+    },
+    "source_commit": {
+      "type": "string",
+      "title": "Source commit"
+    },
+    "schema_version": {
+      "type": "string",
+      "title": "Source schema version"
+    },
+    "imported_count": {
+      "type": "number",
+      "title": "Imported objects",
+      "default": 0
+    },
+    "warning_count": {
+      "type": "number",
+      "title": "Import warnings",
+      "default": 0
+    },
+    "atlas_local_count": {
+      "type": "number",
+      "title": "Atlas-local objects",
+      "default": 0
+    },
+    "sync_state": {
+      "type": "string",
+      "title": "Sync state",
+      "enum": [
+        "never_imported",
+        "synchronized",
+        "local_additions",
+        "import_warnings",
+        "stale"
+      ],
+      "default": "never_imported"
+    },
+    "last_report": {
+      "type": "string",
+      "title": "Last report (JSON)"
+    }
+  },
+  "required": []
+}

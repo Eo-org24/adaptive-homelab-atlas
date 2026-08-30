@@ -4,6 +4,7 @@ import { useAllEntities } from "@/hooks/useEntities";
 import { RelatedList, SpecGrid, Section } from "@/components/Related";
 import MaintenanceList from "@/components/MaintenanceList";
 import { fmtGB, lifecycleTone, criticalityTone, stateClassTone, badgeClass, StatusBadge, fmtDate, refName, typedRefName } from "@/lib/homelab";
+import { workloadPhysicalNode } from "@/lib/relationships";
 
 const ROUTE_BY_TYPE = { workload: "/workloads", environment: "/environments", node: "/nodes", storage: "/storage", network_service: "/network", external: null };
 
@@ -33,9 +34,10 @@ export default function Workloads() {
 
   const enrich = useMemo(() => (w) => {
     const env = envs.find((e) => e.id === w.current_environment);
+    const phys = workloadPhysicalNode(w, envs, nodes);
     return {
       ...w,
-      current_host_name: refName(nodes, w.current_host, "hostname"),
+      current_host_name: phys ? phys.hostname : "",
       current_environment_name: env ? `${env.name} (${env.type})` : "",
       preferred_node_name: refName(nodes, w.preferred_node, "hostname"),
     };
@@ -52,8 +54,8 @@ export default function Workloads() {
           { label: "Criticality", value: <StatusBadge value={w.criticality} tone={criticalityTone(w.criticality)} /> },
           { label: "Lifecycle", value: <StatusBadge value={w.lifecycle} tone={lifecycleTone(w.lifecycle)} /> },
           { label: "State class", value: <StatusBadge value={w.state_classification} tone={stateClassTone(w.state_classification)} /> },
-          { label: "Current host", value: w.current_host_name || "—" },
-          { label: "Environment", value: w.current_environment_name || "—" },
+          { label: "Execution environment", value: w.current_environment_name || "—" },
+          { label: "Physical realization", value: w.current_host_name ? `${w.current_host_name} (via environment)` : "—" },
           { label: "Preferred node", value: w.preferred_node_name || "—" },
           { label: "Availability", value: (w.availability_requirement || "").replace(/_/g, " ") },
           { label: "CPU req", value: w.cpu_requirement ? `${w.cpu_requirement} cores` : "—" },

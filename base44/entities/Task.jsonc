@@ -66,7 +66,11 @@
     },
     "dependency": {
       "type": "string",
-      "title": "Dependency"
+      "title": "Dependency note (free text)"
+    },
+    "dependency_task": {
+      "type": "string",
+      "title": "Dependency task (id)"
     },
     "effort": {
       "type": "string",

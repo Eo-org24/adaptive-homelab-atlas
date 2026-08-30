@@ -4,6 +4,7 @@ import { useAllEntities } from "@/hooks/useEntities";
 import { RelatedList, SpecGrid, Section } from "@/components/Related";
 import MaintenanceList from "@/components/MaintenanceList";
 import { fmtGB, lifecycleTone, badgeClass, StatusBadge, fmtDate } from "@/lib/homelab";
+import { nodeHostedWorkloads } from "@/lib/relationships";
 
 const COLUMNS = [
   { key: "hostname", label: "Hostname", className: "font-medium", mono: true },
@@ -48,8 +49,8 @@ export default function Nodes() {
       {n.notes && <Section title="Notes"><p className="text-sm whitespace-pre-wrap">{n.notes}</p></Section>}
       {(n.tags || []).length > 0 && <div className="flex flex-wrap gap-1.5">{n.tags.map((t) => <span key={t} className={badgeClass("zinc")}>{t}</span>)}</div>}
 
-      <Section title={`Workloads hosted (${workloads.filter((w) => w.current_host === n.id).length})`}>
-        <RelatedList items={workloads.filter((w) => w.current_host === n.id)} route="/workloads" label={(w) => w.name} sub={(w) => w.category.replace(/_/g, " ")} status={(w) => w.lifecycle} tone={(w) => lifecycleTone(w.lifecycle)} goTo={goTo} />
+      <Section title={`Workloads hosted (${nodeHostedWorkloads(n, workloads, envs).length})`}>
+        <RelatedList items={nodeHostedWorkloads(n, workloads, envs)} route="/workloads" label={(w) => w.name} sub={(w) => w.category.replace(/_/g, " ")} status={(w) => w.lifecycle} tone={(w) => lifecycleTone(w.lifecycle)} goTo={goTo} />
       </Section>
       <Section title={`Execution environments (${envs.filter((e) => e.current_host === n.id).length})`}>
         <RelatedList items={envs.filter((e) => e.current_host === n.id)} route="/environments" label={(e) => e.name} sub={(e) => (e.type || "").replace(/_/g, " ")} status={(e) => e.lifecycle} tone={(e) => lifecycleTone(e.lifecycle)} goTo={goTo} />

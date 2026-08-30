@@ -34,7 +34,7 @@
     },
     "current_host": {
       "type": "string",
-      "title": "Current host node (id)"
+      "title": "Current host node (id) \u2014 derived from environment"
     },
     "preferred_node": {
       "type": "string",
@@ -141,22 +141,52 @@
         "type": "string"
       }
     },
+    "canonical_id": {
+      "type": "string",
+      "title": "Canonical ID (e.g. workload:plex)"
+    },
+    "source_kind": {
+      "type": "string",
+      "title": "Source kind",
+      "enum": [
+        "canonical",
+        "manual",
+        "observed",
+        "inferred",
+        "planned",
+        "sample"
+      ],
+      "default": "manual"
+    },
+    "source_repository": {
+      "type": "string",
+      "title": "Source repository"
+    },
+    "source_version": {
+      "type": "string",
+      "title": "Source schema version"
+    },
+    "source_commit": {
+      "type": "string",
+      "title": "Source commit"
+    },
+    "imported_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Imported at"
+    },
     "external_id": {
       "type": "string",
-      "title": "External canonical ID (e.g. workload:plex)"
+      "title": "External canonical ID (legacy)"
     },
     "import_source": {
       "type": "string",
-      "title": "Import source (e.g. homelab-foundation)"
+      "title": "Import source (legacy)"
     },
     "import_timestamp": {
       "type": "string",
       "format": "date-time",
-      "title": "Import timestamp"
-    },
-    "source_commit": {
-      "type": "string",
-      "title": "Source version / commit"
+      "title": "Import timestamp (legacy)"
     },
     "source_note": {
       "type": "string",

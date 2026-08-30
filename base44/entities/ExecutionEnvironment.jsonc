@@ -64,6 +64,40 @@
     "notes": {
       "type": "string",
       "title": "Notes"
+    },
+    "canonical_id": {
+      "type": "string",
+      "title": "Canonical ID (e.g. execution-provider:tools1)"
+    },
+    "source_kind": {
+      "type": "string",
+      "title": "Source kind",
+      "enum": [
+        "canonical",
+        "manual",
+        "observed",
+        "inferred",
+        "planned",
+        "sample"
+      ],
+      "default": "manual"
+    },
+    "source_repository": {
+      "type": "string",
+      "title": "Source repository"
+    },
+    "source_version": {
+      "type": "string",
+      "title": "Source schema version"
+    },
+    "source_commit": {
+      "type": "string",
+      "title": "Source commit"
+    },
+    "imported_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Imported at"
     }
   },
   "required": [
