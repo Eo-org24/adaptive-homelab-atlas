@@ -237,139 +237,299 @@ export function reconstructabilityIssues(workloads, environments) {
   return out;
 }
 
-// Flag: workload assigned to a node without enough stated resources
-export function resourceShortages(workloads, nodes) {
-  const nodeById = {};
-  nodes.forEach((n) => { nodeById[n.id] = n; });
+// Flag: aggregate resource oversubscription at node and environment layers (not per-workload).
+export function resourceShortages(workloads, nodes, environments, pools) {
   const out = [];
-  workloads.forEach((w) => {
-    const n = w.current_host ? nodeById[w.current_host] : null;
-    if (!n) return;
-    if (w.ram_requirement_gb && n.ram_capacity_gb && w.ram_requirement_gb > n.ram_capacity_gb)
-      out.push({ workload: w, node: n, field: "RAM" });
-    if (w.cpu_requirement && n.logical_cpus && w.cpu_requirement > n.logical_cpus)
-      out.push({ workload: w, node: n, field: "CPU" });
-    if (w.gpu_vram_requirement_gb && n.gpu_vram_gb && w.gpu_vram_requirement_gb > n.gpu_vram_gb)
-      out.push({ workload: w, node: n, field: "GPU VRAM" });
+  nodes.forEach((n) => {
+    const over = nodeOversubscription(n, workloads, environments, pools);
+    Object.entries(over).forEach(([field, amount]) => out.push({ node: n, field, amount }));
+  });
+  (environments || []).forEach((e) => {
+    const over = environmentOversubscription(e, workloads);
+    Object.entries(over).forEach(([field, amount]) => out.push({ environment: e, field, amount }));
   });
   return out;
 }
 
-// ---------- Capacity aggregation ----------
-export function nodeAllocations(node, workloads, environments) {
-  // Sum requirements of workloads whose current_host == node.id
-  let cpu = 0, ram = 0, vram = 0, storage = 0;
-  workloads.forEach((w) => {
-    if (w.current_host !== node.id) return;
-    cpu += w.cpu_requirement || 0;
-    ram += w.ram_requirement_gb || 0;
-    vram += w.gpu_vram_requirement_gb || 0;
-    storage += w.storage_requirement_gb || 0;
+// ---------- Resource accounting layers ----------
+// Layer 1 PHYSICAL NODE CAPACITY · Layer 2 ENVIRONMENT ALLOCATION · Layer 3 WORKLOAD REQUIREMENT.
+// A workload inside an environment is counted via its environment's reservation, NOT directly against the node.
+
+// Workloads directly hosted on a node WITHOUT a containing environment on that node (legacy/compat).
+export function directHostedWorkloads(node, workloads, environments) {
+  const envById = new Map((environments || []).map((e) => [e.id, e]));
+  return (workloads || []).filter((w) => {
+    if (w.current_host !== node.id) return false;
+    const env = w.current_environment ? envById.get(w.current_environment) : null;
+    return !env || env.current_host !== node.id;
   });
-  environments.forEach((e) => {
+}
+
+// Physical node allocation = sum of environment reservations on node + direct-hosted workload requirements.
+// Workloads inside an environment are NOT added (their env reservation already accounts for them).
+export function nodeAllocations(node, workloads, environments) {
+  let cpu = 0, ram = 0, vram = 0, storage = 0;
+  const envById = new Map((environments || []).map((e) => [e.id, e]));
+  (environments || []).forEach((e) => {
     if (e.current_host !== node.id) return;
     cpu += e.cpu_allocation || 0;
     ram += e.ram_allocation_gb || 0;
     storage += e.storage_allocation_gb || 0;
   });
+  (workloads || []).forEach((w) => {
+    if (w.current_host !== node.id) return;
+    const env = w.current_environment ? envById.get(w.current_environment) : null;
+    if (env && env.current_host === node.id) return; // counted via env reservation
+    cpu += w.cpu_requirement || 0;
+    ram += w.ram_requirement_gb || 0;
+    vram += w.gpu_vram_requirement_gb || 0;
+    storage += w.storage_requirement_gb || 0;
+  });
   return { cpu, ram, vram, storage };
 }
 
-// ---------- Placement scoring ----------
-// priorities order: simplicity, reliability, power_efficiency, scalability, performance
-export function scorePlacement(workload, node, opts = {}) {
-  const alloc = opts.currentAlloc || { cpu: 0, ram: 0, vram: 0, storage: 0 };
-  const reasons = [];
-  const evidence = [];
-  const unknowns = [];
-  const hardFails = [];
-  const priorities = [];
-  const vrank = { good: 0, warn: 1, bad: 2 };
+// Layer 3: usage of an environment = sum of workload requirements inside it.
+export function environmentUsage(env, workloads) {
+  let cpu = 0, ram = 0, vram = 0, storage = 0, count = 0;
+  (workloads || []).forEach((w) => {
+    if (w.current_environment !== env.id) return;
+    count++;
+    cpu += w.cpu_requirement || 0;
+    ram += w.ram_requirement_gb || 0;
+    vram += w.gpu_vram_requirement_gb || 0;
+    storage += w.storage_requirement_gb || 0;
+  });
+  return { cpu, ram, vram, storage, count };
+}
 
-  // ---- Hard constraints: failure makes a candidate INELIGIBLE (not merely lower-scored) ----
-  const ramNeed = workload.ram_requirement_gb || 0;
-  const ramCap = node.ram_capacity_gb;
-  if (ramNeed > 0) {
-    if (ramCap == null) unknowns.push("Node RAM capacity not documented");
-    else if (ramNeed > ramCap - alloc.ram) { hardFails.push("RAM"); evidence.push(`RAM need ${ramNeed}GB > free ${(ramCap - alloc.ram).toFixed(0)}GB of ${ramCap}GB`); }
-  }
-  const cpuNeed = workload.cpu_requirement || 0;
+// Environment oversubscription: usage > allocation (where allocation is documented).
+export function environmentOversubscription(env, workloads) {
+  const usage = environmentUsage(env, workloads);
+  const out = {};
+  if (env.cpu_allocation != null && usage.cpu > env.cpu_allocation) out.cpu = usage.cpu - env.cpu_allocation;
+  if (env.ram_allocation_gb != null && usage.ram > env.ram_allocation_gb) out.ram = usage.ram - env.ram_allocation_gb;
+  if (env.storage_allocation_gb != null && usage.storage > env.storage_allocation_gb) out.storage = usage.storage - env.storage_allocation_gb;
+  return out;
+}
+
+// Node oversubscription: allocation > capacity (where capacity is documented).
+export function nodeOversubscription(node, workloads, environments, pools) {
+  const alloc = nodeAllocations(node, workloads, environments);
+  const out = {};
   const cpuCap = node.logical_cpus != null ? node.logical_cpus : node.physical_cores;
-  if (cpuNeed > 0) {
-    if (cpuCap == null) unknowns.push("Node CPU count not documented");
-    else if (cpuNeed > cpuCap - alloc.cpu) { hardFails.push("CPU"); evidence.push(`CPU need ${cpuNeed} > free ${cpuCap - alloc.cpu} of ${cpuCap}`); }
-  }
-  const vramNeed = workload.gpu_vram_requirement_gb || 0;
-  const vramCap = node.gpu_vram_gb;
-  if (vramNeed > 0) {
-    if (!vramCap || vramCap === 0) { hardFails.push("GPU VRAM"); evidence.push(`Workload requires ${vramNeed}GB GPU VRAM but node has no documented GPU`); }
-    else if (vramNeed > vramCap - alloc.vram) { hardFails.push("GPU VRAM"); evidence.push(`GPU VRAM need ${vramNeed}GB > free ${(vramCap - alloc.vram).toFixed(0)}GB of ${vramCap}GB`); }
-  }
-  if (workload.gpu_requirement && (!node.gpus || node.gpus.length === 0) && !vramNeed)
-    unknowns.push("Workload declares a GPU requirement but node GPU list is empty and no VRAM specified");
+  if (cpuCap != null && alloc.cpu > cpuCap) out.cpu = alloc.cpu - cpuCap;
+  if (node.ram_capacity_gb != null && alloc.ram > node.ram_capacity_gb) out.ram = alloc.ram - node.ram_capacity_gb;
+  const su = nodeStorageUsable(node, pools);
+  if (su.known && alloc.storage > su.usable) out.storage = alloc.storage - su.usable;
+  if (node.gpu_vram_gb != null && node.gpu_vram_gb > 0 && alloc.vram > node.gpu_vram_gb) out.vram = alloc.vram - node.gpu_vram_gb;
+  return out;
+}
 
-  if (hardFails.length) {
-    return { eligible: false, score: 0, hardFails, reasons: [`Fails hard constraint: ${hardFails.join(", ")}`], evidence, unknowns, priorities: [], rankKey: "9" };
+// Storage capacity on a node. Raw = sum of device capacities. Usable = sum of pool usable capacities.
+// Do NOT double-count a device's raw capacity and the pool built from it as two usable capacities.
+export function nodeStorageRaw(node, storageDevices) {
+  const raw = (storageDevices || []).filter((d) => d.current_node === node.id && d.health !== "retired")
+    .reduce((s, d) => s + (d.capacity_gb || 0), 0);
+  return { raw, known: raw > 0 };
+}
+export function nodeStorageUsable(node, pools) {
+  const nodePools = (pools || []).filter((p) => p.node === node.id);
+  const usable = nodePools.filter((p) => p.state !== "retired").reduce((s, p) => s + (p.usable_capacity_gb || 0), 0);
+  return { usable, known: nodePools.length > 0 && usable > 0 };
+}
+
+// ---------- Placement scoring ----------
+// Hard constraints first (PASS/FAIL/UNKNOWN/NA), then strict lexicographic priority order.
+// Unknown hard constraints yield ELIGIBILITY UNKNOWN — never a confident eligible recommendation.
+const PRIO_STATE_RANK = { pass: 0, unknown: 1, warn: 2, bad: 3 };
+const ELIG_RANK = { eligible: 0, unknown: 1, ineligible: 2 };
+
+export function scorePlacement(workload, node, opts = {}) {
+  const envs = opts.envs || [];
+  const workloads = opts.workloads || [];
+  const pools = opts.pools || [];
+  const others = workloads.filter((w) => w.id !== workload.id);
+  const envById = new Map(envs.map((e) => [e.id, e]));
+  const env = workload.current_environment ? envById.get(workload.current_environment) : null;
+  const inEnv = !!(env && env.current_host === node.id);
+
+  const nodeAlloc = nodeAllocations(node, others, envs);
+  const envUsage = env ? environmentUsage(env, others) : null;
+
+  const hardConstraints = [];
+  const hardFails = [];
+  const unknowns = [];
+  const unverified = [];
+  const evidence = [];
+  const need = {
+    cpu: workload.cpu_requirement || 0,
+    ram: workload.ram_requirement_gb || 0,
+    vram: workload.gpu_vram_requirement_gb || 0,
+    storage: workload.storage_requirement_gb || 0,
+  };
+  const hc = (key, label, state, detail) => {
+    hardConstraints.push({ key, label, state, detail });
+    if (state === "fail") { hardFails.push(label); evidence.push(`${label}: ${detail}`); }
+    else if (state === "unknown") unknowns.push(`${label}: ${detail}`);
+  };
+
+  // RAM
+  if (need.ram > 0) {
+    if (inEnv) {
+      const cap = env.ram_allocation_gb;
+      if (cap == null) hc("ram", "RAM", "unknown", "environment RAM allocation not documented");
+      else if (need.ram > cap - envUsage.ram) hc("ram", "RAM", "fail", `need ${need.ram}GB > env free ${(cap - envUsage.ram).toFixed(0)}GB of ${cap}GB`);
+      else hc("ram", "RAM", "pass", `env free ${(cap - envUsage.ram).toFixed(0)}GB of ${cap}GB after placement`);
+    } else {
+      const cap = node.ram_capacity_gb;
+      if (cap == null) hc("ram", "RAM", "unknown", "node RAM capacity not documented");
+      else if (need.ram > cap - nodeAlloc.ram) hc("ram", "RAM", "fail", `need ${need.ram}GB > node free ${(cap - nodeAlloc.ram).toFixed(0)}GB of ${cap}GB`);
+      else hc("ram", "RAM", "pass", `node free ${(cap - nodeAlloc.ram).toFixed(0)}GB of ${cap}GB after placement`);
+    }
+  } else hc("ram", "RAM", "na", "no RAM requirement");
+
+  // CPU
+  if (need.cpu > 0) {
+    if (inEnv) {
+      const cap = env.cpu_allocation;
+      if (cap == null) hc("cpu", "CPU", "unknown", "environment CPU allocation not documented");
+      else if (need.cpu > cap - envUsage.cpu) hc("cpu", "CPU", "fail", `need ${need.cpu} > env free ${cap - envUsage.cpu} of ${cap}`);
+      else hc("cpu", "CPU", "pass", `env free ${cap - envUsage.cpu} of ${cap} after placement`);
+    } else {
+      const cap = node.logical_cpus != null ? node.logical_cpus : node.physical_cores;
+      if (cap == null) hc("cpu", "CPU", "unknown", "node CPU count not documented");
+      else if (need.cpu > cap - nodeAlloc.cpu) hc("cpu", "CPU", "fail", `need ${need.cpu} > node free ${cap - nodeAlloc.cpu} of ${cap}`);
+      else hc("cpu", "CPU", "pass", `node free ${cap - nodeAlloc.cpu} of ${cap} after placement`);
+    }
+  } else hc("cpu", "CPU", "na", "no CPU requirement");
+
+  // Storage
+  if (need.storage > 0) {
+    if (inEnv) {
+      const cap = env.storage_allocation_gb;
+      if (cap == null) hc("storage", "Storage", "unknown", "environment storage allocation not documented");
+      else if (need.storage > cap - envUsage.storage) hc("storage", "Storage", "fail", `need ${need.storage}GB > env free ${(cap - envUsage.storage).toFixed(0)}GB of ${cap}GB`);
+      else hc("storage", "Storage", "pass", `env free ${(cap - envUsage.storage).toFixed(0)}GB of ${cap}GB after placement`);
+    } else {
+      const su = nodeStorageUsable(node, pools);
+      if (!su.known) hc("storage", "Storage", "unknown", "no storage pool usable capacity documented on node");
+      else if (need.storage > su.usable - nodeAlloc.storage) hc("storage", "Storage", "fail", `need ${need.storage}GB > node free ${(su.usable - nodeAlloc.storage).toFixed(0)}GB of ${su.usable}GB usable`);
+      else hc("storage", "Storage", "pass", `node free ${(su.usable - nodeAlloc.storage).toFixed(0)}GB of ${su.usable}GB usable after placement`);
+    }
+  } else hc("storage", "Storage", "na", "no storage requirement");
+
+  // GPU VRAM (node-level; environments do not reserve GPU)
+  if (need.vram > 0) {
+    const gpuPresent = (node.gpus && node.gpus.length > 0) || (node.gpu_vram_gb != null && node.gpu_vram_gb > 0);
+    if (!gpuPresent) {
+      if (node.gpus == null && node.gpu_vram_gb == null) hc("gpu", "GPU VRAM", "unknown", "node GPU state unknown");
+      else hc("gpu", "GPU VRAM", "fail", "workload requires GPU VRAM but node has no documented GPU");
+    } else {
+      const cap = node.gpu_vram_gb;
+      if (cap == null) hc("gpu", "GPU VRAM", "unknown", "node GPU VRAM capacity not documented");
+      else if (need.vram > cap - nodeAlloc.vram) hc("gpu", "GPU VRAM", "fail", `need ${need.vram}GB > node free ${(cap - nodeAlloc.vram).toFixed(0)}GB of ${cap}GB`);
+      else hc("gpu", "GPU VRAM", "pass", `node free ${(cap - nodeAlloc.vram).toFixed(0)}GB of ${cap}GB after placement`);
+    }
+  } else hc("gpu", "GPU VRAM", "na", "no GPU VRAM requirement");
+
+  // Availability (hard)
+  if (workload.availability_requirement === "always_on") {
+    if (node.availability_expectation == null) hc("availability", "Availability", "unknown", "node availability expectation not documented");
+    else if (node.availability_expectation !== "always_on") hc("availability", "Availability", "fail", "always-on workload on non-always-on node");
+    else hc("availability", "Availability", "pass", "node is always-on");
+  } else hc("availability", "Availability", "na", "no always-on requirement");
+
+  // Explicit eligible/preferred allowlist (hard when an eligible list is populated)
+  const eligible = workload.eligible_alternative_nodes || [];
+  if (eligible.length > 0) {
+    if (eligible.includes(node.id) || workload.preferred_node === node.id) hc("placement", "Placement rules", "pass", "node is in declared eligible/preferred set");
+    else hc("placement", "Placement rules", "fail", "node not in declared eligible/preferred list");
+  } else hc("placement", "Placement rules", "na", "no explicit eligible list");
+
+  // Free-text / structured-but-unmodeled requirements are NOT verified
+  if (workload.gpu_requirement && need.vram === 0) unverified.push("gpu_requirement is free text — not deterministically verified");
+  if (workload.network_requirement) unverified.push("network_requirement is free text — not deterministically verified");
+  if (workload.minimum_network_mbps != null) unknowns.push("minimum_network_mbps set but node network capacity not modeled");
+  if (workload.required_capabilities && workload.required_capabilities.length) unknowns.push("required_capabilities set but node capabilities not modeled");
+  if (workload.required_gpu_class) unknowns.push("required_gpu_class set but node GPU class not modeled");
+
+  const hasFail = hardConstraints.some((c) => c.state === "fail");
+  const hasUnknown = hardConstraints.some((c) => c.state === "unknown");
+  const eligibility = hasFail ? "ineligible" : hasUnknown ? "unknown" : "eligible";
+
+  if (eligibility === "ineligible") {
+    return { eligibility, eligible: false, score: 0, hardFails, hardConstraints, priorities: [], reasons: [`Fails hard constraint: ${hardFails.join(", ")}`], evidence, unknowns, unverified, confidence: "low", rankKey: `${ELIG_RANK.ineligible}|zzz` };
   }
 
-  // ---- Priority evaluation in exact order: simplicity, reliability, power, scalability, performance ----
+  // ---- Priorities (strict order: simplicity → reliability → power → scalability → performance) ----
+  const priorities = [];
+  const prio = (key, label, score, state, reason) => priorities.push({ key, label, score, state, reason });
+
   // 1. Simplicity
-  let simpVerdict = "good", simpDetail = "", simpScore = 80;
-  if (workload.preferred_node === node.id) { simpDetail = "Matches declared preferred node — no new coordination surface"; simpScore = 100; }
-  else if (workload.eligible_alternative_nodes?.includes(node.id)) { simpDetail = "Listed as an eligible alternative"; simpScore = 85; }
-  else { simpVerdict = "warn"; simpDetail = "Not in preferred/eligible list — placement here adds coordination surface"; simpScore = 50; }
-  if (node.node_type === "workstation" && workload.availability_requirement === "always_on") { simpVerdict = "bad"; simpDetail = "Always-on workload on a workstation conflicts with the simplicity principle"; simpScore = 20; }
-  priorities.push({ key: "simplicity", label: "Simplicity", verdict: simpVerdict, score: simpScore, detail: simpDetail });
+  let sScore, sState, sReason;
+  if (inEnv) { sScore = 5; sState = "pass"; sReason = "Uses existing execution environment on this node"; }
+  else if (workload.preferred_node === node.id) { sScore = 5; sState = "pass"; sReason = "Matches declared preferred node"; }
+  else if (eligible.includes(node.id)) { sScore = 4; sState = "pass"; sReason = "Listed as an eligible alternative"; }
+  else if (env) { sScore = 3; sState = "warn"; sReason = "Environment exists but is hosted elsewhere — placement here adds coordination"; }
+  else { sScore = 3; sState = "warn"; sReason = "Direct-hosted placement (no execution environment)"; }
+  if (node.node_type === "workstation" && workload.availability_requirement === "always_on") { sScore = 1; sState = "bad"; sReason = "Always-on workload on a workstation"; }
+  prio("simplicity", "Simplicity", sScore, sState, sReason);
 
   // 2. Reliability
-  let relVerdict = "good", relDetail = "", relScore = 80;
-  if (["degraded", "maintenance", "retiring", "retired"].includes(node.lifecycle_state)) { relVerdict = "bad"; relDetail = `Node lifecycle is ${node.lifecycle_state}`; relScore = 25; }
-  else if (node.lifecycle_state === "experimental") { relVerdict = "warn"; relDetail = "Node is experimental"; relScore = 55; }
-  else { relDetail = "Node lifecycle is healthy/active"; relScore = 85; }
-  if (workload.availability_requirement === "always_on" && node.availability_expectation !== "always_on") { relVerdict = "bad"; relDetail += " — always-on workload on a non-always-on node"; relScore = Math.min(relScore, 30); }
-  else if (node.availability_expectation === "always_on") { relScore = Math.min(100, relScore + 10); }
-  if ((workload.criticality === "critical" || workload.criticality === "high") && node.availability_expectation === "best_effort") { if (relVerdict !== "bad") relVerdict = "warn"; relDetail += " — high-criticality workload on best-effort node"; relScore = Math.min(relScore, 45); }
-  priorities.push({ key: "reliability", label: "Reliability", verdict: relVerdict, score: relScore, detail: relDetail });
+  let rScore = 5, rState = "pass", rReason = "Node lifecycle is healthy/active";
+  if (["degraded", "maintenance", "retiring", "retired"].includes(node.lifecycle_state)) { rScore = 1; rState = "bad"; rReason = `Node lifecycle is ${node.lifecycle_state}`; }
+  else if (node.lifecycle_state === "experimental") { rScore = 3; rState = "warn"; rReason = "Node is experimental"; }
+  if (workload.availability_requirement === "always_on" && node.availability_expectation === "always_on") rReason += " · always-on host";
+  if ((workload.criticality === "critical" || workload.criticality === "high") && node.availability_expectation === "best_effort") { rScore = Math.min(rScore, 2); rState = rState === "bad" ? "bad" : "warn"; rReason += " · high-criticality on best-effort node"; }
+  prio("reliability", "Reliability", rScore, rState, rReason);
 
-  // 3. Power efficiency
-  let powVerdict = "good", powDetail = "", powScore = 70;
+  // 3. Power efficiency — missing data is UNKNOWN, never 0
+  let pScore, pState, pReason;
   const idle = node.idle_power_w;
-  if (idle == null) { powVerdict = "warn"; powDetail = "Idle power not documented"; powScore = 50; }
-  else if (idle <= 15) { powDetail = `Very low idle power (${idle}W)`; powScore = 95; }
-  else if (idle <= 60) { powDetail = `Moderate idle power (${idle}W)`; powScore = 75; }
-  else if (idle >= 200) { powVerdict = "warn"; powDetail = `High idle power (${idle}W)`; powScore = 40; }
-  else { powDetail = `Idle power ${idle}W`; powScore = 65; }
-  priorities.push({ key: "power", label: "Power efficiency", verdict: powVerdict, score: powScore, detail: powDetail });
+  if (idle == null) { pScore = 0; pState = "unknown"; pReason = "No reliable power data recorded"; }
+  else if (idle <= 15) { pScore = 5; pState = "pass"; pReason = `Very low idle power (${idle}W)`; }
+  else if (idle <= 40) { pScore = 4; pState = "pass"; pReason = `Low idle power (${idle}W)`; }
+  else if (idle <= 80) { pScore = 3; pState = "pass"; pReason = `Moderate idle power (${idle}W)`; }
+  else if (idle <= 150) { pScore = 2; pState = "warn"; pReason = `High idle power (${idle}W)`; }
+  else { pScore = 1; pState = "warn"; pReason = `Very high idle power (${idle}W)`; }
+  prio("power", "Power efficiency", pScore, pState, pReason);
 
-  // 4. Scalability — headroom after placement
-  let scalVerdict = "good", scalDetail = "", scalScore = 70;
-  if (ramCap && ramNeed) {
-    const remainPct = 1 - (alloc.ram + ramNeed) / ramCap;
-    if (remainPct > 0.5) { scalDetail = `${Math.round(remainPct * 100)}% RAM headroom after placement`; scalScore = 90; }
-    else if (remainPct > 0.2) { scalDetail = `${Math.round(remainPct * 100)}% RAM headroom after placement`; scalScore = 70; }
-    else { scalVerdict = "warn"; scalDetail = `Only ${Math.round(remainPct * 100)}% RAM headroom after placement`; scalScore = 40; }
-  } else { scalVerdict = "warn"; scalDetail = "Insufficient capacity data to evaluate headroom"; scalScore = 50; unknowns.push("Scalability assessed on RAM only; storage headroom not modeled per node"); }
-  priorities.push({ key: "scalability", label: "Scalability", verdict: scalVerdict, score: scalScore, detail: scalDetail });
+  // 4. Scalability — headroom on the binding resource
+  let scScore, scState, scReason;
+  const bCap = inEnv ? env.ram_allocation_gb : node.ram_capacity_gb;
+  const bUsed = inEnv ? (envUsage ? envUsage.ram : 0) : nodeAlloc.ram;
+  if (bCap == null) { scScore = 0; scState = "unknown"; scReason = "Capacity data insufficient to evaluate headroom"; }
+  else {
+    const remain = 1 - (bUsed + need.ram) / bCap;
+    if (remain > 0.5) { scScore = 5; scState = "pass"; scReason = `${Math.round(remain * 100)}% headroom remains after placement`; }
+    else if (remain > 0.25) { scScore = 4; scState = "pass"; scReason = `${Math.round(remain * 100)}% headroom remains`; }
+    else if (remain > 0.1) { scScore = 3; scState = "warn"; scReason = `${Math.round(remain * 100)}% headroom remains`; }
+    else { scScore = 2; scState = "warn"; scReason = `Only ${Math.round(remain * 100)}% headroom remains`; }
+  }
+  prio("scalability", "Scalability", scScore, scState, scReason);
 
   // 5. Performance
-  let perfVerdict = "good", perfDetail = "", perfScore = 70;
-  if (vramNeed > 0) {
-    if (vramCap && vramCap >= vramNeed * 2) { perfDetail = `Strong GPU VRAM headroom (${vramCap}GB vs ${vramNeed}GB need)`; perfScore = 90; }
-    else if (vramCap) { perfVerdict = "warn"; perfDetail = `Limited GPU VRAM headroom (${vramCap}GB vs ${vramNeed}GB need)`; perfScore = 55; }
-  } else if (cpuNeed > 0 && cpuCap) {
-    if (cpuCap >= cpuNeed * 4) { perfDetail = `Strong CPU headroom (${cpuCap} vs ${cpuNeed} need)`; perfScore = 85; }
-    else if (cpuCap >= cpuNeed * 2) { perfDetail = "Adequate CPU headroom"; perfScore = 70; }
-    else { perfVerdict = "warn"; perfDetail = "Tight CPU headroom"; perfScore = 50; }
-  } else { perfVerdict = "warn"; perfDetail = "No demanding resource requirement declared"; perfScore = 60; }
-  priorities.push({ key: "performance", label: "Performance", verdict: perfVerdict, score: perfScore, detail: perfDetail });
+  let pfScore, pfState, pfReason;
+  if (need.vram > 0) {
+    const cap = node.gpu_vram_gb;
+    if (cap == null) { pfScore = 0; pfState = "unknown"; pfReason = "GPU VRAM capacity unknown"; }
+    else if (cap >= need.vram * 2) { pfScore = 5; pfState = "pass"; pfReason = `Large GPU VRAM headroom (${cap}GB vs ${need.vram}GB need)`; }
+    else { pfScore = 3; pfState = "warn"; pfReason = `Limited GPU VRAM headroom (${cap}GB vs ${need.vram}GB need)`; }
+  } else if (need.cpu > 0) {
+    const cap = node.logical_cpus != null ? node.logical_cpus : node.physical_cores;
+    if (cap == null) { pfScore = 0; pfState = "unknown"; pfReason = "CPU capacity unknown"; }
+    else if (cap >= need.cpu * 4) { pfScore = 5; pfState = "pass"; pfReason = `Large CPU headroom (${cap} vs ${need.cpu} need)`; }
+    else if (cap >= need.cpu * 2) { pfScore = 4; pfState = "pass"; pfReason = "Adequate CPU headroom"; }
+    else { pfScore = 2; pfState = "warn"; pfReason = "Tight CPU headroom"; }
+  } else { pfScore = 3; pfState = "pass"; pfReason = "No demanding resource requirement"; }
+  prio("performance", "Performance", pfScore, pfState, pfReason);
 
-  // Composite score is display-only. Recommendation is lexicographic on priority order,
-  // so performance cannot override a simplicity/reliability disadvantage.
-  const score = Math.round(priorities.reduce((s, p) => s + p.score, 0) / priorities.length);
-  reasons.push(...priorities.map((p) => `${p.label}: ${p.detail}`));
-  const rankKey = priorities.map((p) => `${vrank[p.verdict]}${(100 - p.score).toString().padStart(3, "0")}`).join("|");
+  const score = Math.round((priorities.reduce((s, p) => s + p.score, 0) / (priorities.length * 5)) * 100);
+  const reasons = priorities.map((p) => `${p.label}: ${p.reason}`);
+  const confidence = eligibility === "unknown" ? "low" : (unknowns.length || unverified.length) ? "medium" : "high";
+  const rankKey = `${ELIG_RANK[eligibility]}|${priorities.map((p) => `${PRIO_STATE_RANK[p.state]}${5 - p.score}`).join("|")}`;
 
-  return { eligible: true, score, hardFails: [], reasons, evidence, unknowns, priorities, rankKey };
+  return { eligibility, eligible: eligibility === "eligible", score, hardFails, hardConstraints, priorities, reasons, evidence, unknowns, unverified, confidence, rankKey };
 }
 
 // ---------- Global search ----------

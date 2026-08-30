@@ -57,11 +57,15 @@
     },
     "gpu_requirement": {
       "type": "string",
-      "title": "GPU requirement"
+      "title": "GPU requirement (free text \u2014 not verified)"
     },
     "gpu_vram_requirement_gb": {
       "type": "number",
       "title": "GPU VRAM requirement (GB)"
+    },
+    "required_gpu_class": {
+      "type": "string",
+      "title": "Required GPU class / capability"
     },
     "storage_requirement_gb": {
       "type": "number",
@@ -69,7 +73,18 @@
     },
     "network_requirement": {
       "type": "string",
-      "title": "Network requirement"
+      "title": "Network requirement (free text \u2014 not verified)"
+    },
+    "minimum_network_mbps": {
+      "type": "number",
+      "title": "Minimum network (Mbps)"
+    },
+    "required_capabilities": {
+      "type": "array",
+      "title": "Required capabilities",
+      "items": {
+        "type": "string"
+      }
     },
     "availability_requirement": {
       "type": "string",
