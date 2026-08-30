@@ -6,6 +6,7 @@ import MaintenanceList from "@/components/MaintenanceList";
 import { fmtGB, lifecycleTone, badgeClass, StatusBadge, fmtDate } from "@/lib/homelab";
 import { nodeHostedWorkloads } from "@/lib/relationships";
 import ObjectFindings from "@/components/ObjectFindings";
+import ProvenanceSection from "@/components/ProvenanceSection";
 
 const COLUMNS = [
   { key: "hostname", label: "Hostname", className: "font-medium", mono: true },
@@ -68,6 +69,7 @@ export default function Nodes() {
       <Section title="Affected by changes">
         <RelatedList items={changes.filter((c) => (c.affected_nodes || []).includes(n.id))} route="/change-planner" label={(c) => c.title} status={(c) => c.status} tone={(c) => lifecycleTone(c.status)} goTo={goTo} />
       </Section>
+      <ProvenanceSection record={n} objectType="node" fields={[{ label: "CPU model", field: "cpu_model" }, { label: "RAM capacity", field: "ram_capacity_gb", format: (v) => (v ? `${v} GB` : "—") }, { label: "GPU VRAM", field: "gpu_vram_gb", format: (v) => (v ? `${v} GB` : "—") }]} />
       <ObjectFindings type="node" id={n.id} canonicalId={n.canonical_id} />
     </div>
   );

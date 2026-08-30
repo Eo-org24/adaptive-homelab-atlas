@@ -199,6 +199,10 @@
       "type": "string",
       "format": "date-time",
       "title": "Observed at"
+    },
+    "field_provenance": {
+      "type": "string",
+      "title": "Field-level provenance overlay (JSON)"
     }
   },
   "required": [

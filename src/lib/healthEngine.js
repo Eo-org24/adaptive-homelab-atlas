@@ -5,6 +5,7 @@
 // No AI prose: a finding exists only if it can be proven from current data; UNKNOWN where it cannot.
 
 import { detectCycles, fmtGB, nodeAllocations, nodeOversubscription, environmentUsage, environmentOversubscription, nodeStorageUsable } from "@/lib/homelab";
+import { readFieldProvenance } from "@/lib/provenance";
 import { buildLookups, resolveRef, refFieldNames, DEP_TYPE_MAP } from "@/lib/relationships";
 
 const GEN_AT = new Date().toISOString();
@@ -247,6 +248,53 @@ export function runHealthChecks(data) {
   changes.forEach((c) => {
     if (["accepted", "ready", "executing"].includes(c.status) && !c.rollback_strategy) push({ code: "CHANGE_NO_ROLLBACK", severity: "warning", category: "change_risk", affected_type: "planned_change", affected_id: c.id, affected_canonical_id: c.canonical_id, affected_name: c.title, title: "In-flight change without rollback plan", explanation: `Change "${c.title}" is ${c.status} but has no rollback strategy.`, evidence: [`status=${c.status}`, "rollback_strategy empty"], recommendation: "Document a rollback strategy before execution." });
     if (c.risk === "high" && ["ready", "executing"].includes(c.status) && !c.prerequisites) push({ code: "HIGH_RISK_NO_PREREQ", severity: "warning", category: "change_risk", affected_type: "planned_change", affected_id: c.id, affected_canonical_id: c.canonical_id, affected_name: c.title, title: "High-risk change without prerequisites", explanation: `High-risk change "${c.title}" is ${c.status} but has no documented prerequisites.`, evidence: [`risk=high`, `status=${c.status}`, "prerequisites empty"], recommendation: "Document and verify prerequisites before execution." });
+  });
+
+  // ---------- SOURCE-AWARE FINDINGS (§16) ----------
+  CANONICAL_ENTITIES.forEach((entity) => {
+    (data[entity] || []).forEach((r) => {
+      const fp = readFieldProvenance(r);
+      const overrideFields = Object.keys(fp).filter((f) => fp[f].local != null);
+      if (overrideFields.length && r.source_kind === "canonical") overrideFields.forEach((f) => push({
+        code: "LOCAL_OVERRIDE_ON_CANONICAL", severity: "warning", category: "provenance",
+        affected_type: entity.toLowerCase(), affected_id: r.id, affected_canonical_id: r.canonical_id,
+        affected_name: r.hostname || r.name || r.title || r.model || r.id,
+        title: "Local override on canonical object",
+        explanation: `Canonical ${entity} "${r.canonical_id}" has an Atlas-local override on field "${f}" that may conflict with the next import.`,
+        evidence: [`field=${f}`, `local=${fp[f].local}`, `canonical=${r[f]}`],
+        recommendation: "Review the override before importing, or promote it to canonical.",
+      }));
+      if (r.source_kind === "canonical" && r.imported_at) {
+        const ageDays = (Date.now() - new Date(r.imported_at).getTime()) / 86400000;
+        if (!isNaN(ageDays) && ageDays > STALE_DAYS) push({
+          code: "CANONICAL_SOURCE_STALE", severity: "info", category: "provenance",
+          affected_type: entity.toLowerCase(), affected_id: r.id, affected_canonical_id: r.canonical_id,
+          affected_name: r.hostname || r.name || r.title || r.model || r.id,
+          title: "Canonical source is stale",
+          explanation: `Canonical ${entity} "${r.canonical_id}" was imported ${Math.round(ageDays)} days ago — the source snapshot may have moved on.`,
+          evidence: [`imported_at=${r.imported_at}`, `age=${Math.round(ageDays)}d`],
+          recommendation: "Re-import to refresh canonical state.",
+        });
+      }
+    });
+  });
+  workloads.forEach((w) => {
+    if (w.state_classification === "sample" && !["retired", "planned"].includes(w.lifecycle)) push({
+      code: "SAMPLE_DATA_IN_ACTIVE_ARCHITECTURE", severity: "warning", category: "provenance",
+      affected_type: "workload", affected_id: w.id, affected_canonical_id: w.canonical_id, affected_name: w.name,
+      title: "Sample data in active architecture",
+      explanation: `"${w.name}" is marked as sample data but has lifecycle ${w.lifecycle} — sample data should not be treated as real infrastructure.`,
+      evidence: [`state_classification=sample`, `lifecycle=${w.lifecycle}`],
+      recommendation: "Replace with real data or set lifecycle to retired/planned.",
+    });
+    if (w.state_classification === "inferred" && (w.confidence == null || w.confidence < 0.5) && (w.criticality === "high" || w.criticality === "critical")) push({
+      code: "INFERRED_LOW_CONFIDENCE", severity: "warning", category: "provenance",
+      affected_type: "workload", affected_id: w.id, affected_canonical_id: w.canonical_id, affected_name: w.name,
+      title: "Low-confidence inferred data on important workload",
+      explanation: `"${w.name}" is ${w.criticality}-critical, state is inferred, and confidence is ${w.confidence == null ? "unset" : w.confidence}.`,
+      evidence: [`state_classification=inferred`, `confidence=${w.confidence ?? "unset"}`, `criticality=${w.criticality}`],
+      recommendation: "Validate and re-classify, or raise confidence.",
+    });
   });
 
   findings.sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] || a.code.localeCompare(b.code));

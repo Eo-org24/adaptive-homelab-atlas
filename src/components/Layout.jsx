@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { NavLink, useNavigate, Outlet } from "react-router-dom";
 import {
   LayoutDashboard, Server, Boxes, Container, Workflow, Network, HardDrive, Database, Gauge, GitBranch,
-  Scale, ShieldCheck, Wrench, ListTodo, Activity, Settings, Search, Sun, Moon, LogOut, X, DownloadCloud,
+  Scale, ShieldCheck, Wrench, ListTodo, Activity, Settings, Search, Sun, Moon, LogOut, X, DownloadCloud, Share2,
 } from "lucide-react";
 import { base44 } from "@/api/base44Client";
 import { globalSearch } from "@/lib/homelab";
@@ -21,6 +21,7 @@ const NAV = [
   { to: "/decisions", label: "Decisions", icon: Scale },
   { to: "/maintenance", label: "Maintenance", icon: Wrench },
   { to: "/tasks", label: "Tasks", icon: ListTodo },
+  { to: "/architecture", label: "Architecture", icon: Share2 },
   { to: "/findings", label: "Data Quality", icon: ShieldCheck },
   { to: "/activity", label: "Activity", icon: Activity },
   { to: "/canonical-import", label: "Canonical Import", icon: DownloadCloud },

@@ -24,6 +24,7 @@ import Maintenance from '@/pages/Maintenance';
 import Tasks from '@/pages/Tasks';
 import Activity from '@/pages/Activity';
 import Findings from '@/pages/Findings';
+import Architecture from '@/pages/Architecture';
 import CanonicalImport from '@/pages/CanonicalImport';
 import Settings from '@/pages/Settings';
 import Login from '@/pages/Login';
@@ -78,6 +79,7 @@ const AuthenticatedApp = () => {
           <Route path="/tasks" element={<Tasks />} />
           <Route path="/activity" element={<Activity />} />
           <Route path="/findings" element={<Findings />} />
+          <Route path="/architecture" element={<Architecture />} />
           <Route path="/canonical-import" element={<CanonicalImport />} />
           <Route path="/settings" element={<Settings />} />
         </Route>

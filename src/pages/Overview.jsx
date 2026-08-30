@@ -12,9 +12,10 @@ import {
   nodeAllocations, typedRefName,
 } from "@/lib/homelab";
 import { runHealthChecks } from "@/lib/healthEngine";
+import { normalizeSourceKind, readFieldProvenance, staleStatus } from "@/lib/provenance";
 import FindingsList from "@/components/FindingsList";
 
-const LOAD = ["Node", "Workload", "ExecutionEnvironment", "StorageDevice", "StoragePool", "NetworkDevice", "PlannedChange", "Task", "Maintenance", "Decision", "Dependency"];
+const LOAD = ["Node", "Workload", "ExecutionEnvironment", "StorageDevice", "StoragePool", "NetworkDevice", "PlannedChange", "Task", "Maintenance", "Decision", "Dependency", "Observation"];
 
 const PIE_COLORS = ["#0ea5e9", "#8b5cf6", "#f59e0b", "#10b981", "#f43f5e", "#6366f1", "#ec4899", "#14b8a6", "#f97316", "#a3a3a3", "#84cc16"];
 
@@ -33,6 +34,24 @@ export default function Overview() {
   const deps = data.Dependency || [];
 
   const findings = useMemo(() => runHealthChecks(data), [data]);
+  const archState = useMemo(() => {
+    const ents = ["Node", "ExecutionEnvironment", "Workload", "StorageDevice", "StoragePool", "NetworkDevice", "Decision", "Dependency"];
+    let canonical = 0, local = 0, overrides = 0;
+    ents.forEach((k) => (data[k] || []).forEach((r) => {
+      const s = normalizeSourceKind(r.source_kind || r.state_classification);
+      if (s === "canonical") canonical++;
+      if (s === "local" || s === "unknown") local++;
+      const fp = readFieldProvenance(r);
+      if (Object.keys(fp).some((f) => fp[f].local != null)) overrides++;
+    }));
+    const obs = data.Observation || [];
+    const fresh = obs.filter((o) => staleStatus(o.observed_at) === "FRESH").length;
+    const stale = obs.filter((o) => ["STALE", "AGING"].includes(staleStatus(o.observed_at))).length;
+    const plannedChanges = (data.PlannedChange || []).filter((c) => !["completed", "abandoned", "rolled_back"].includes(c.status)).length;
+    const activeErrors = findings.filter((f) => f.severity === "error" || f.severity === "critical").length;
+    const unknown = findings.filter((f) => !f.data_sufficient).length;
+    return { canonical, local, overrides, fresh, stale, plannedChanges, activeErrors, unknown };
+  }, [data, findings]);
 
   const stats = useMemo(() => {
     const activeNodes = nodes.filter((n) => !["retired", "planned"].includes(n.lifecycle_state));
@@ -192,6 +211,19 @@ export default function Overview() {
           )}
         </Card>
 
+        <Card title="Architecture state" className="p-4">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-2.5">
+            <StateCell label="Canonical objects" value={archState.canonical} />
+            <StateCell label="Atlas-local / unknown" value={archState.local} />
+            <StateCell label="Local overrides" value={archState.overrides} tone={archState.overrides ? "amber" : "zinc"} />
+            <StateCell label="Fresh observations" value={archState.fresh} tone="emerald" />
+            <StateCell label="Stale / aging obs." value={archState.stale} tone={archState.stale ? "amber" : "zinc"} />
+            <StateCell label="Planned changes" value={archState.plannedChanges} />
+            <StateCell label="Active errors" value={archState.activeErrors} tone={archState.activeErrors ? "rose" : "emerald"} />
+            <StateCell label="Insufficient-data" value={archState.unknown} tone={archState.unknown ? "amber" : "zinc"} />
+          </div>
+        </Card>
+
         {/* Recent changes */}
         <Card title="Recent changes" className="p-4" actions={<button onClick={() => navigate("/change-planner")} className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">View all <ArrowRight className="w-3 h-3" /></button>}>
           {recentChanges.length === 0 ? <EmptyState title="No changes recorded" /> : (
@@ -283,6 +315,16 @@ export default function Overview() {
           )}
         </Card>
       </div>
+    </div>
+  );
+}
+
+function StateCell({ label, value, tone = "zinc" }) {
+  const tones = { zinc: "text-foreground", emerald: "text-emerald-500", amber: "text-amber-500", rose: "text-rose-500" };
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className={`text-base font-semibold tabular-nums ${tones[tone] || tones.zinc}`}>{value}</div>
     </div>
   );
 }

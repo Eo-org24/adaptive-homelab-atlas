@@ -98,6 +98,10 @@
       "type": "string",
       "format": "date-time",
       "title": "Imported at"
+    },
+    "field_provenance": {
+      "type": "string",
+      "title": "Field-level provenance overlay (JSON)"
     }
   },
   "required": [

@@ -6,6 +6,7 @@ import { SpecGrid, Section, RelatedList } from "@/components/Related";
 import MaintenanceList from "@/components/MaintenanceList";
 import { lifecycleTone, StatusBadge, fmtDate, badgeClass } from "@/lib/homelab";
 import ObjectFindings from "@/components/ObjectFindings";
+import ProvenanceSection from "@/components/ProvenanceSection";
 
 const COLUMNS = [
   { key: "name", label: "Name", className: "font-medium" },
@@ -43,6 +44,7 @@ export default function Network() {
       <Section title="Maintenance history">
         <MaintenanceList items={maintenance.filter((m) => m.target_id === d.id)} data={all} goTo={goTo} emptyMsg="No maintenance logged" />
       </Section>
+      <ProvenanceSection record={d} objectType="network_device" fields={[{ label: "Port count", field: "port_count" }]} />
       <ObjectFindings type="network_device" id={d.id} canonicalId={d.canonical_id} />
     </div>
   );

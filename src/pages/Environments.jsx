@@ -5,6 +5,7 @@ import { RelatedList, SpecGrid, Section } from "@/components/Related";
 import MaintenanceList from "@/components/MaintenanceList";
 import { fmtGB, lifecycleTone, StatusBadge, refName } from "@/lib/homelab";
 import ObjectFindings from "@/components/ObjectFindings";
+import ProvenanceSection from "@/components/ProvenanceSection";
 
 const COLUMNS = [
   { key: "name", label: "Name", className: "font-medium" },
@@ -49,6 +50,7 @@ export default function Environments() {
       <Section title="Maintenance history">
         <MaintenanceList items={maintenance.filter((m) => m.target_id === e.id)} data={data} goTo={goTo} emptyMsg="No maintenance" />
       </Section>
+      <ProvenanceSection record={e} objectType="environment" fields={[{ label: "CPU allocation", field: "cpu_allocation", format: (v) => (v ? `${v} cores` : "—") }, { label: "RAM allocation", field: "ram_allocation_gb", format: (v) => (v ? `${v} GB` : "—") }, { label: "Storage allocation", field: "storage_allocation_gb", format: (v) => (v ? `${v} GB` : "—") }]} />
       <ObjectFindings type="environment" id={e.id} canonicalId={e.canonical_id} />
     </div>
   );

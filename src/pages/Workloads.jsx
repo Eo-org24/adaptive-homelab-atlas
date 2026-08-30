@@ -6,6 +6,7 @@ import MaintenanceList from "@/components/MaintenanceList";
 import { fmtGB, lifecycleTone, criticalityTone, stateClassTone, badgeClass, StatusBadge, fmtDate, refName, typedRefName } from "@/lib/homelab";
 import { workloadPhysicalNode } from "@/lib/relationships";
 import ObjectFindings from "@/components/ObjectFindings";
+import ProvenanceSection from "@/components/ProvenanceSection";
 
 const ROUTE_BY_TYPE = { workload: "/workloads", environment: "/environments", node: "/nodes", storage: "/storage", network_service: "/network", external: null };
 
@@ -93,6 +94,7 @@ export default function Workloads() {
         <Section title="Affected by changes">
           <RelatedList items={changes.filter((c) => (c.affected_workloads || []).includes(w.id))} route="/change-planner" label={(c) => c.title} status={(c) => c.status} tone={(c) => lifecycleTone(c.status)} goTo={goTo} />
         </Section>
+        <ProvenanceSection record={w} objectType="workload" fields={[{ label: "CPU requirement", field: "cpu_requirement", format: (v) => (v ? `${v} cores` : "—") }, { label: "RAM requirement", field: "ram_requirement_gb", format: (v) => (v ? `${v} GB` : "—") }, { label: "Storage requirement", field: "storage_requirement_gb", format: (v) => (v ? `${v} GB` : "—") }]} />
         <ObjectFindings type="workload" id={w.id} canonicalId={w.canonical_id} />
       </div>
     );

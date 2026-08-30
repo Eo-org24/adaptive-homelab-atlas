@@ -5,6 +5,7 @@ import { RelatedList, SpecGrid, Section } from "@/components/Related";
 import MaintenanceList from "@/components/MaintenanceList";
 import { fmtGB, fmtDate, badgeClass, refName } from "@/lib/homelab";
 import ObjectFindings from "@/components/ObjectFindings";
+import ProvenanceSection from "@/components/ProvenanceSection";
 
 const HEALTH_TONE = { healthy: "emerald", warning: "amber", failing: "rose", unknown: "zinc", retired: "zinc" };
 const COLUMNS = [
@@ -60,6 +61,7 @@ export default function Storage() {
         <Section title="Maintenance history">
           <MaintenanceList items={maintenance.filter((m) => m.target_id === s.id)} data={data} goTo={goTo} emptyMsg="No maintenance" />
         </Section>
+        <ProvenanceSection record={s} objectType="storage" fields={[{ label: "Capacity", field: "capacity_gb", format: (v) => (v ? `${v} GB` : "—") }]} />
         <ObjectFindings type="storage" id={s.id} canonicalId={s.canonical_id} />
       </div>
     );

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useAllEntities } from "@/hooks/useEntities";
 import { validateEnvelope, previewImport, runImport, SAMPLE_ENVELOPE } from "@/lib/canonicalImport";
+import { overrideConflicts } from "@/lib/provenance";
 import SyncStatusPanel from "@/components/SyncStatusPanel";
 import { PageHeader, Card } from "@/components/ui-bits";
 import { Upload, Play, FileWarning, CheckCircle2, AlertTriangle, XCircle, Loader2 } from "lucide-react";
@@ -13,6 +14,7 @@ export default function CanonicalImport() {
   const [report, setReport] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [conflicts, setConflicts] = useState([]);
   const [phase, setPhase] = useState(""); // "preview" | "imported"
 
   const parse = () => {
@@ -27,7 +29,7 @@ export default function CanonicalImport() {
   const onPreview = () => {
     const env = parse(); if (!env) return;
     const r = previewImport(env, data);
-    setReport(r); setPhase("preview");
+    setReport(r); setPhase("preview"); setConflicts(overrideConflicts(env, data));
   };
 
   const onRun = async () => {
@@ -35,7 +37,7 @@ export default function CanonicalImport() {
     setBusy(true); setPhase("");
     try {
       const r = await runImport(env, data);
-      setReport(r); setPhase("imported");
+      setReport(r); setPhase("imported"); setConflicts(overrideConflicts(env, data));
     } catch (e) { setError(`Import failed: ${e.message}`); }
     setBusy(false);
   };
@@ -104,6 +106,15 @@ export default function CanonicalImport() {
           <ReportSection title="Unresolved references" items={report.unresolved} tone="amber" render={(i) => `${i.entity} ${i.canonical_id}: ${i.field} → ${Array.isArray(i.refs) ? i.refs.join(", ") : i.ref} (${i.target || "external"})`} />
           <ReportSection title="Duplicate canonical IDs (conflicts)" items={report.conflicts} tone="rose" render={(i) => `${i.canonical_id} (first at ${i.first?.join(":")}, duplicate at ${i.duplicate?.join(":")})`} />
           <ReportSection title="Warnings" items={report.warnings} tone="amber" render={(i) => `${i.entity} ${i.canonical_id || ""}: ${i.field || ""} ${i.note || i.ref || ""}`} />
+          {conflicts.length > 0 && (
+            <div className="mt-3 border-t border-border pt-3">
+              <div className="text-xs font-medium text-rose-500 mb-1">Local override conflicts ({conflicts.length})</div>
+              <p className="text-[11px] text-muted-foreground mb-2">Canonical snapshot changes a field that has an Atlas-local override. The local override is preserved — operator attention required.</p>
+              <ul className="space-y-1 max-h-48 overflow-auto">
+                {conflicts.map((c, i) => <li key={i} className="text-xs font-mono text-muted-foreground">· {c.entity} {c.canonical_id}: <span className="text-rose-500">{c.field}</span> canonical={String(c.canonicalValue)} vs local override={String(c.localValue)}</li>)}
+              </ul>
+            </div>
+          )}
         </Card>
       )}
     </div>
