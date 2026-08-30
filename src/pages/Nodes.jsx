@@ -5,6 +5,7 @@ import { RelatedList, SpecGrid, Section } from "@/components/Related";
 import MaintenanceList from "@/components/MaintenanceList";
 import { fmtGB, lifecycleTone, badgeClass, StatusBadge, fmtDate } from "@/lib/homelab";
 import { nodeHostedWorkloads } from "@/lib/relationships";
+import ObjectFindings from "@/components/ObjectFindings";
 
 const COLUMNS = [
   { key: "hostname", label: "Hostname", className: "font-medium", mono: true },
@@ -67,6 +68,7 @@ export default function Nodes() {
       <Section title="Affected by changes">
         <RelatedList items={changes.filter((c) => (c.affected_nodes || []).includes(n.id))} route="/change-planner" label={(c) => c.title} status={(c) => c.status} tone={(c) => lifecycleTone(c.status)} goTo={goTo} />
       </Section>
+      <ObjectFindings type="node" id={n.id} canonicalId={n.canonical_id} />
     </div>
   );
 

@@ -5,6 +5,7 @@ import { RelatedList, SpecGrid, Section } from "@/components/Related";
 import MaintenanceList from "@/components/MaintenanceList";
 import { fmtGB, lifecycleTone, criticalityTone, stateClassTone, badgeClass, StatusBadge, fmtDate, refName, typedRefName } from "@/lib/homelab";
 import { workloadPhysicalNode } from "@/lib/relationships";
+import ObjectFindings from "@/components/ObjectFindings";
 
 const ROUTE_BY_TYPE = { workload: "/workloads", environment: "/environments", node: "/nodes", storage: "/storage", network_service: "/network", external: null };
 
@@ -92,6 +93,7 @@ export default function Workloads() {
         <Section title="Affected by changes">
           <RelatedList items={changes.filter((c) => (c.affected_workloads || []).includes(w.id))} route="/change-planner" label={(c) => c.title} status={(c) => c.status} tone={(c) => lifecycleTone(c.status)} goTo={goTo} />
         </Section>
+        <ObjectFindings type="workload" id={w.id} canonicalId={w.canonical_id} />
       </div>
     );
   };

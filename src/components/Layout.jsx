@@ -21,7 +21,7 @@ const NAV = [
   { to: "/decisions", label: "Decisions", icon: Scale },
   { to: "/maintenance", label: "Maintenance", icon: Wrench },
   { to: "/tasks", label: "Tasks", icon: ListTodo },
-  { to: "/findings", label: "Findings", icon: ShieldCheck },
+  { to: "/findings", label: "Data Quality", icon: ShieldCheck },
   { to: "/activity", label: "Activity", icon: Activity },
   { to: "/canonical-import", label: "Canonical Import", icon: DownloadCloud },
   { to: "/settings", label: "Settings", icon: Settings },

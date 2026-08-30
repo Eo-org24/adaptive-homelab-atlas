@@ -4,6 +4,7 @@ import { useAllEntities } from "@/hooks/useEntities";
 import { RelatedList, SpecGrid, Section } from "@/components/Related";
 import MaintenanceList from "@/components/MaintenanceList";
 import { fmtGB, lifecycleTone, StatusBadge, refName } from "@/lib/homelab";
+import ObjectFindings from "@/components/ObjectFindings";
 
 const COLUMNS = [
   { key: "name", label: "Name", className: "font-medium" },
@@ -48,6 +49,7 @@ export default function Environments() {
       <Section title="Maintenance history">
         <MaintenanceList items={maintenance.filter((m) => m.target_id === e.id)} data={data} goTo={goTo} emptyMsg="No maintenance" />
       </Section>
+      <ObjectFindings type="environment" id={e.id} canonicalId={e.canonical_id} />
     </div>
   );
 

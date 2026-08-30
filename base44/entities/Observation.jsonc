@@ -1,0 +1,58 @@
+{
+  "name": "Observation",
+  "type": "object",
+  "properties": {
+    "object_canonical_id": {
+      "type": "string",
+      "title": "Object canonical ID"
+    },
+    "object_type": {
+      "type": "string",
+      "title": "Object type",
+      "enum": [
+        "node",
+        "workload",
+        "environment",
+        "storage",
+        "network_device"
+      ]
+    },
+    "observed_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Observed at"
+    },
+    "source": {
+      "type": "string",
+      "title": "Source (e.g. hlctl, operator)"
+    },
+    "confidence": {
+      "type": "number",
+      "title": "Confidence (0-1)"
+    },
+    "fields_observed": {
+      "type": "array",
+      "title": "Fields observed",
+      "items": {
+        "type": "string"
+      }
+    },
+    "observation_version": {
+      "type": "string",
+      "title": "Observation version"
+    },
+    "payload": {
+      "type": "string",
+      "title": "Observed payload (JSON)"
+    },
+    "notes": {
+      "type": "string",
+      "title": "Notes"
+    }
+  },
+  "required": [
+    "object_canonical_id",
+    "object_type",
+    "observed_at"
+  ]
+}

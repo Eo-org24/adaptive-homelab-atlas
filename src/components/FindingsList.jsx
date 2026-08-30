@@ -1,19 +1,19 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertOctagon, AlertTriangle, AlertCircle, Info, CircleDot } from "lucide-react";
+import { AlertOctagon, AlertTriangle, AlertCircle, Info } from "lucide-react";
 
 const SEV = {
   critical: { icon: AlertOctagon, color: "text-rose-500" },
-  high: { icon: AlertTriangle, color: "text-orange-500" },
-  medium: { icon: AlertCircle, color: "text-amber-500" },
-  low: { icon: CircleDot, color: "text-sky-500" },
+  error: { icon: AlertTriangle, color: "text-orange-500" },
+  warning: { icon: AlertCircle, color: "text-amber-500" },
   info: { icon: Info, color: "text-muted-foreground" },
 };
 
 const ROUTE = {
   workload: "/workloads", node: "/nodes", environment: "/environments",
   dependency: "/dependencies", maintenance: "/maintenance", task: "/tasks",
-  storage: "/storage", network_device: "/network",
+  storage: "/storage", storage_pool: "/storage-pools", network_device: "/network",
+  planned_change: "/change-planner", decision: "/decisions",
 };
 
 export default function FindingsList({ findings }) {
@@ -36,6 +36,7 @@ export default function FindingsList({ findings }) {
                   {f.affected_name && go && (
                     <button onClick={go} className="text-xs text-sky-500 hover:underline truncate max-w-[40ch]">{f.affected_name}</button>
                   )}
+                  {f.affected_canonical_id && <span className="text-[10px] font-mono text-muted-foreground/70">{f.affected_canonical_id}</span>}
                   {!f.data_sufficient && <span className="text-[10px] text-muted-foreground italic">insufficient data</span>}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">{f.explanation}</p>
@@ -44,7 +45,7 @@ export default function FindingsList({ findings }) {
                     {f.evidence.map((e, j) => <li key={j} className="text-[11px] text-muted-foreground/80 font-mono">· {e}</li>)}
                   </ul>
                 )}
-                {f.suggested_action && <p className="text-[11px] mt-1 text-emerald-600 dark:text-emerald-400">→ {f.suggested_action}</p>}
+                {f.recommendation && <p className="text-[11px] mt-1 text-emerald-600 dark:text-emerald-400">→ {f.recommendation}</p>}
               </div>
             </div>
           </li>

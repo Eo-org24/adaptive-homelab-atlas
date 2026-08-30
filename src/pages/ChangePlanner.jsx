@@ -6,6 +6,7 @@ import { useAllEntities } from "@/hooks/useEntities";
 import { RelatedList, SpecGrid, Section } from "@/components/Related";
 import { fmtDate, lifecycleTone, riskTone, StatusBadge, badgeClass, refName } from "@/lib/homelab";
 import { AlertTriangle, GitBranch, Sliders } from "lucide-react";
+import ChangeImpact from "@/components/ChangeImpact";
 
 const STATUS_TONE = {
   idea: "zinc", proposed: "amber", accepted: "sky", ready: "violet",
@@ -79,12 +80,15 @@ function ChangeDetail({ change, nodes, workloads, goTo }) {
 
 export default function ChangePlanner() {
   const [tab, setTab] = useState("changes");
-  const { data } = useAllEntities(["Node", "Workload"]);
+  const { data } = useAllEntities(["Node", "Workload", "ExecutionEnvironment", "StorageDevice", "StoragePool", "NetworkDevice", "Dependency", "Maintenance", "Task", "PlannedChange", "Decision"]);
   const nodes = data.Node || [];
   const workloads = data.Workload || [];
 
   const detailRender = (change, { goTo }) => (
-    <ChangeDetail change={change} nodes={nodes} workloads={workloads} goTo={goTo} />
+    <>
+      <ChangeDetail change={change} nodes={nodes} workloads={workloads} goTo={goTo} />
+      <ChangeImpact change={change} data={data} />
+    </>
   );
 
   return (
