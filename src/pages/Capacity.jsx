@@ -1,9 +1,10 @@
 import React, { useMemo, useState } from "react";
-import { useAllEntities } from "@/hooks/useEntities";
+import { useArchitectureDataset } from "@/hooks/useArchitectureDataset";
 import { PageHeader, Card } from "@/components/ui-bits";
-import { fmtGB, nodeAllocations, nodeStorageRaw, nodeStorageUsable, directHostedWorkloads, environmentUsage, scorePlacement, aggregateKnown } from "@/lib/homelab";
+import { fmtGB, nodeAllocations, nodeStorageRaw, nodeStorageUsable, directHostedWorkloads, environmentUsage, scorePlacement, aggregateKnown, nodeMemoryCapacity } from "@/lib/homelab";
+import { realDataset } from "@/lib/provenance";
 import { EligibilityBadge, ConstraintRow, PriorityRow } from "@/components/PlacementBits";
-import { Boxes, Cpu, MemoryStick, Monitor, HardDrive } from "lucide-react";
+import { Boxes, Cpu, MemoryStick, Monitor, HardDrive, DatabaseZap } from "lucide-react";
 
 const LOAD = ["Node", "Workload", "ExecutionEnvironment", "StorageDevice", "StoragePool"];
 
@@ -15,7 +16,9 @@ function ResBar({ allocated, total, tone = "sky" }) {
 }
 
 export default function Capacity() {
-  const { data, loading } = useAllEntities(LOAD);
+  const { data: rawData, complete, errors, incompleteEntities, loading } = useArchitectureDataset(LOAD);
+  // Exclude sample AND fixture records from operational capacity calculations.
+  const data = useMemo(() => realDataset(rawData), [rawData]);
   const nodes = data.Node || [];
   const workloads = data.Workload || [];
   const envs = data.ExecutionEnvironment || [];
@@ -46,7 +49,9 @@ export default function Capacity() {
   const cpuCap = (n) => (n.logical_cpus != null ? n.logical_cpus : n.physical_cores);
   const cpuAgg = useMemo(() => nodes.map((n) => ({ v: cpuCap(n) })), [nodes]);
   const cpuKnown = useMemo(() => aggregateKnown(cpuAgg, "v"), [cpuAgg]);
-  const ramAgg = useMemo(() => aggregateKnown(nodes, "ram_capacity_gb"), [nodes]);
+  // Prefer canonical memory_gib (GiB) over legacy ram_capacity_gb (GB).
+  const ramAgg = useMemo(() => aggregateKnown(nodes.map((n) => ({ v: nodeMemoryCapacity(n).value })), "v"), [nodes]);
+  const ramUnit = useMemo(() => nodes.some((n) => n.memory_gib != null) ? "GiB" : "GB", [nodes]);
   const vramAgg = useMemo(() => aggregateKnown(nodes, "gpu_vram_gb"), [nodes]);
   const poolAgg = useMemo(() => aggregateKnown(pools, "usable_capacity_gb"), [pools]);
 
@@ -56,9 +61,22 @@ export default function Capacity() {
     <div className="p-6 max-w-[1600px] mx-auto">
       <PageHeader title="Capacity" description="Documented capacity versus allocation across physical nodes and execution environments. No remote control — documented state only." />
 
+      {!complete && (
+        <Card className="p-4 mb-4 border-rose-500/30 bg-rose-500/5">
+          <div className="flex items-start gap-2">
+            <DatabaseZap className="w-4 h-4 text-rose-500 mt-0.5 shrink-0" />
+            <div>
+              <div className="text-sm font-medium text-rose-600 dark:text-rose-400">DATASET INCOMPLETE</div>
+              <p className="text-xs text-muted-foreground mt-1">Capacity totals may be understated due to an incomplete dataset load. Results are not authoritative.</p>
+              {incompleteEntities.length > 0 && <p className="text-[11px] text-muted-foreground mt-1">Affected: {incompleteEntities.join(", ")}</p>}
+            </div>
+          </div>
+        </Card>
+      )}
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         <Card className="p-4"><div className="flex items-center gap-2 text-muted-foreground text-xs"><Cpu className="w-3.5 h-3.5" /> Total CPU</div><div className="text-2xl font-semibold mt-1">{cpuKnown.sum}</div><div className="text-xs text-muted-foreground">{cpuKnown.unknownCount > 0 ? `${cpuKnown.unknownCount} node${cpuKnown.unknownCount !== 1 ? "s" : ""} undocumented` : "logical CPUs"}</div></Card>
-        <Card className="p-4"><div className="flex items-center gap-2 text-muted-foreground text-xs"><MemoryStick className="w-3.5 h-3.5" /> Total RAM</div><div className="text-2xl font-semibold mt-1">{fmtGB(ramAgg.sum)}</div><div className="text-xs text-muted-foreground">{ramAgg.unknownCount > 0 ? `${ramAgg.unknownCount} node${ramAgg.unknownCount !== 1 ? "s" : ""} undocumented` : "documented capacity"}</div></Card>
+        <Card className="p-4"><div className="flex items-center gap-2 text-muted-foreground text-xs"><MemoryStick className="w-3.5 h-3.5" /> Total RAM</div><div className="text-2xl font-semibold mt-1">{fmtGB(ramAgg.sum)}</div><div className="text-xs text-muted-foreground">{ramAgg.unknownCount > 0 ? `${ramAgg.unknownCount} node${ramAgg.unknownCount !== 1 ? "s" : ""} undocumented` : `documented capacity (${ramUnit})`}</div></Card>
         <Card className="p-4"><div className="flex items-center gap-2 text-muted-foreground text-xs"><Monitor className="w-3.5 h-3.5" /> GPU VRAM</div><div className="text-2xl font-semibold mt-1">{fmtGB(vramAgg.sum)}</div><div className="text-xs text-muted-foreground">{vramAgg.unknownCount > 0 ? `${vramAgg.unknownCount} node${vramAgg.unknownCount !== 1 ? "s" : ""} undocumented` : "documented capacity"}</div></Card>
         <Card className="p-4"><div className="flex items-center gap-2 text-muted-foreground text-xs"><HardDrive className="w-3.5 h-3.5" /> Pools usable</div><div className="text-2xl font-semibold mt-1">{fmtGB(poolAgg.sum)}</div><div className="text-xs text-muted-foreground">{poolAgg.unknownCount > 0 ? `${poolAgg.unknownCount} pool${poolAgg.unknownCount !== 1 ? "s" : ""} undocumented` : "documented capacity"}</div></Card>
       </div>
@@ -66,6 +84,7 @@ export default function Capacity() {
       <div className="space-y-4">
         {rows.map((r) => {
           const n = r.node;
+          const mem = nodeMemoryCapacity(n);
           return (
             <Card key={n.id} className="p-4">
               <div className="flex items-center justify-between mb-3">
@@ -77,7 +96,7 @@ export default function Capacity() {
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <ResCell label="CPU (cores)" allocated={r.alloc.cpu} total={cpuCap(n)} tone="emerald" />
-                <ResCell label="RAM" allocated={r.alloc.ram} total={n.ram_capacity_gb} tone="sky" fmt={fmtGB} />
+                <ResCell label={`RAM (${mem.unit || "—"})`} allocated={r.alloc.ram} total={mem.value} tone="sky" fmt={fmtGB} />
                 <ResCell label="GPU VRAM" allocated={r.alloc.vram} total={n.gpu_vram_gb} tone="violet" fmt={fmtGB} />
                 <StorageCell raw={r.raw} usable={r.usable} allocated={r.alloc.storage} />
               </div>

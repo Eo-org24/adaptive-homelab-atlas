@@ -52,6 +52,18 @@ export default function Findings() {
   return (
     <div className="p-6 max-w-[1400px] mx-auto">
       <PageHeader title="Data Quality & Integrity" description="Deterministic findings derived from documented relationships and state. No live monitoring — findings reflect only the data Atlas holds, and say 'insufficient data' where they cannot decide." />
+      {!complete && (
+        <Card className="p-4 mb-4 border-rose-500/30 bg-rose-500/5">
+          <div className="flex items-start gap-2">
+            <DatabaseZap className="w-4 h-4 text-rose-500 mt-0.5 shrink-0" />
+            <div>
+              <div className="text-sm font-medium text-rose-600 dark:text-rose-400">DATASET INCOMPLETE</div>
+              <p className="text-xs text-muted-foreground mt-1">Findings may be missing or inaccurate due to an incomplete dataset load. Results are not authoritative.</p>
+              {incompleteEntities.length > 0 && <p className="text-[11px] text-muted-foreground mt-1">Affected: {incompleteEntities.join(", ")}</p>}
+            </div>
+          </div>
+        </Card>
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
         <StatCard label="Errors" value={bySev.critical.length + bySev.error.length} icon={AlertOctagon} tone="rose" />

@@ -160,6 +160,18 @@ function validateSchemaKindConsistency(entities) {
   return errors;
 }
 
+// ---- Entity kind validation (unknown kinds rejected clearly) ----
+function validateEntityKinds(entities) {
+  const errors = [];
+  const knownKinds = new Set(Object.keys(KIND_SCHEMA_STRING));
+  (entities || []).forEach((e, idx) => {
+    if (!knownKinds.has(e.kind)) {
+      errors.push({ path: ["entities", idx, "kind"], message: `unknown entity kind "${e.kind}"` });
+    }
+  });
+  return errors;
+}
+
 // ---- Main strict validation entry point ----
 // Returns { valid: boolean, errors: string[] }.
 export function validateV1Strict(envelope) {
@@ -176,8 +188,10 @@ export function validateV1Strict(envelope) {
   }
   // If envelope shape is valid, validate cross-field consistency
   if (envResult.success) {
+    const kindErrors = validateEntityKinds(envelope.entities);
     const schemaKindErrors = validateSchemaKindConsistency(envelope.entities);
     const relKindErrors = validateRelationshipKinds(envelope.relationships);
+    kindErrors.forEach((e) => errors.push(`${e.path.join(".")}: ${e.message}`));
     schemaKindErrors.forEach((e) => errors.push(`${e.path.join(".")}: ${e.message}`));
     relKindErrors.forEach((e) => errors.push(`${e.path.join(".")}: ${e.message}`));
   }

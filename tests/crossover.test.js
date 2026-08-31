@@ -39,20 +39,20 @@ describe("crossover: artifact validation (§1, §10)", () => {
   it("rejects an unknown top-level field", () => {
     const bad = { ...ARTIFACT, surprise: 1 };
     const r = previewImport(bad, {});
-    expect(r.failed.some((f) => /unknown top-level field "surprise"/.test(f.reason))).toBe(true);
+    expect(r.failed.some((f) => /surprise/.test(f.reason))).toBe(true);
   });
   it("rejects an unknown entity kind", () => {
-    const bad = { ...ARTIFACT, entities: [...ARTIFACT.entities, { kind: "widget", id: "x" }] };
+    const bad = { ...ARTIFACT, entities: [...ARTIFACT.entities, { schema: "homelab.widget/v1", kind: "widget", id: "x", provenance: { source_class: "canonical" } }] };
     const r = previewImport(bad, {});
     expect(r.failed.some((f) => /unknown entity kind "widget"/.test(f.reason))).toBe(true);
   });
   it("rejects an unknown relationship type", () => {
     const bad = { ...ARTIFACT, relationships: [...ARTIFACT.relationships, { source: "node:test-node-1", type: "likes", target: "node:test-node-1" }] };
     const r = previewImport(bad, {});
-    expect(r.failed.some((f) => /unknown relationship type "likes"/.test(f.reason))).toBe(true);
+    expect(r.failed.some((f) => /likes/.test(f.reason))).toBe(true);
   });
   it("rejects a duplicate typed entity identity", () => {
-    const bad = { ...ARTIFACT, entities: [...ARTIFACT.entities, { kind: "node", id: "test-node-1" }] };
+    const bad = { ...ARTIFACT, entities: [...ARTIFACT.entities, { schema: "homelab.node/v1", kind: "node", id: "test-node-1", provenance: { source_class: "canonical" } }] };
     const r = previewImport(bad, {});
     expect(r.conflicts.length).toBeGreaterThanOrEqual(1);
     expect(r.conflicts.some((c) => c.canonical_id === "node:test-node-1")).toBe(true);

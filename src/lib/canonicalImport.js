@@ -190,6 +190,7 @@ function normalizeUnified(envelope, options = {}) {
     if (seen.has(cid)) { conflicts.push({ canonical_id: cid, first: seen.get(cid), duplicate: idx }); return; }
     seen.set(cid, idx);
     const entity = KIND_TO_ENTITY[e.kind];
+    if (!entity) { inputErrors.push({ entity: "(entity)", index: idx, reason: `unknown entity kind "${e.kind}"` }); return; }
     items.push({ entity, section: "entities", index: idx, canonical_id: cid, incoming: mapUnifiedEntity(e, entity, fixtureTag), kind: e.kind });
   });
 
