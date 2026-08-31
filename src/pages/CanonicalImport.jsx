@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useCallback } from "react";
 import { useArchitectureDataset } from "@/hooks/useArchitectureDataset";
 import { validateEnvelope, previewImport, runImport, SAMPLE_ENVELOPE, GOLDEN_CROSSOVER, COMPREHENSIVE_V1_FIXTURE, REAL_CROSSOVER_ARTIFACT } from "@/lib/canonicalImport";
 import { overrideConflicts } from "@/lib/provenance";
@@ -35,7 +35,19 @@ export default function CanonicalImport() {
   const [conflicts, setConflicts] = useState([]);
   const [phase, setPhase] = useState(""); // "preview" | "imported"
   const [parsedEnv, setParsedEnv] = useState(null);
+  // C5: One shared synchronous mutation lock for normal import AND repair.
+  // Acquired synchronously before the first await; released in finally.
   const busyRef = useRef(false);
+  const acquireLock = useCallback(() => {
+    if (busyRef.current) return false;
+    busyRef.current = true;
+    setBusy(true);
+    return true;
+  }, []);
+  const releaseLock = useCallback(() => {
+    busyRef.current = false;
+    setBusy(false);
+  }, []);
 
   const clearStale = () => { setReport(null); setError(""); setConflicts([]); setPhase(""); setParsedEnv(null); };
   const loadText = (t) => { setText(t); clearStale(); };
@@ -60,21 +72,19 @@ export default function CanonicalImport() {
   const onRun = async () => {
     if (busyRef.current || busy || loading || incomplete) return;
     const env = parse(); if (!env) return;
-    busyRef.current = true;
-    setBusy(true); setPhase("");
+    if (!acquireLock()) return;
+    setPhase("");
     try {
       const r = await runImport(env, data, { complete });
       setReport(r); setPhase("imported"); setConflicts(overrideConflicts(env, data));
       // Refresh the page dataset after any non-blocked import that may have written.
-      // This prevents stale page state from causing duplicate creates on a second import.
       if (!r.blocked) {
         await refresh();
       }
     } catch (e) {
       setError(`Import failed: ${e.message}`);
     } finally {
-      busyRef.current = false;
-      setBusy(false);
+      releaseLock();
     }
   };
 
@@ -205,6 +215,9 @@ export default function CanonicalImport() {
         data={data}
         complete={complete}
         disabled={busy || loading || incomplete}
+        busy={busy}
+        acquireLock={acquireLock}
+        releaseLock={releaseLock}
         onAfterRepair={refresh}
       />
     </div>

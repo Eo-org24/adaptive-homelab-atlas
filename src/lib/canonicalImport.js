@@ -700,19 +700,48 @@ export async function runImport(envelope, data, options = {}) {
     }
 
     // Apply entity field updates (hosted_on, placement arrays).
+    // C7: Advance value-change provenance (source_commit/imported_at) only when the
+    // canonical relationship value ACTUALLY changes. Unchanged relationships only
+    // advance last_seen_* — never falsely advance value-change provenance.
     for (const entity of Object.keys(updatesByEntity)) {
       const byId = new Map();
       updatesByEntity[entity].forEach((u) => {
         // For canonical-owned arrays: REPLACE (not merge) — stale entries removed.
         byId.set(u.id, { ...byId.get(u.id) || {}, ...u });
       });
-      try { await adapter.bulkUpdate(entity, Array.from(byId.values())); }
+      const updates = Array.from(byId.values());
+      // C7: Augment each update with provenance based on whether the value actually changed
+      const augmentedUpdates = updates.map((u) => {
+        const existing = (fresh[entity] || []).find((r) => r.id === u.id);
+        if (!existing) {
+          // Record was just created — provenance already set in Phase 1
+          return { ...u, last_seen_source_commit: meta.source_commit, last_seen_import_at: meta.imported_at };
+        }
+        let relChanged = false;
+        for (const [field, newVal] of Object.entries(u)) {
+          if (field === "id") continue;
+          const oldVal = existing[field];
+          if (JSON.stringify(oldVal) !== JSON.stringify(newVal)) { relChanged = true; break; }
+        }
+        if (relChanged) {
+          return { ...u, source_commit: meta.source_commit, imported_at: meta.imported_at, last_seen_source_commit: meta.source_commit, last_seen_import_at: meta.imported_at };
+        }
+        // Relationship unchanged — only advance last_seen_*, NOT source_commit/imported_at
+        return { ...u, last_seen_source_commit: meta.source_commit, last_seen_import_at: meta.imported_at };
+      });
+      try { await adapter.bulkUpdate(entity, augmentedUpdates); }
       catch (e) { report.warnings.push({ entity, note: `relationship update failed: ${e.message}` }); partialFailure = true; }
     }
 
     // Upsert Dependency records for depends_on (deterministic relationship_key).
+    // C7: Advance value-change provenance (source_commit/imported_at) only when the
+    // dependency value ACTUALLY changes. An existing depends_on with the same
+    // deterministic identity and same source_id/target_id must NOT receive a new
+    // value-change source_commit/imported_at — only last_seen_* advances.
     if (dependenciesToUpsert.length) {
       for (const dep of dependenciesToUpsert) {
+        const depExisting = dep.existing;
+        const depValueChanged = !depExisting || depExisting.source_id !== dep.source_id || depExisting.target_id !== dep.target_id;
         const depPayload = {
           source_type: "workload", source_id: dep.source_id,
           target_type: "workload", target_id: dep.target_id,
@@ -722,14 +751,20 @@ export async function runImport(envelope, data, options = {}) {
           source_kind: "canonical",
           source_repository: meta.source_repository,
           source_version: meta.source_version,
-          source_commit: meta.source_commit,
-          imported_at: meta.imported_at,
           last_seen_source_commit: meta.source_commit,
           last_seen_import_at: meta.imported_at,
         };
+        if (depValueChanged) {
+          depPayload.source_commit = meta.source_commit;
+          depPayload.imported_at = meta.imported_at;
+        } else {
+          // Keep existing value-change provenance — do not advance
+          depPayload.source_commit = depExisting.source_commit || meta.source_commit;
+          depPayload.imported_at = depExisting.imported_at || meta.imported_at;
+        }
         try {
-          if (dep.existing) {
-            await adapter.update("Dependency", dep.existing.id, depPayload);
+          if (depExisting) {
+            await adapter.update("Dependency", depExisting.id, depPayload);
             report.dependencies_updated.push({ relationship_key: dep.relationship_key });
           } else {
             await adapter.create("Dependency", depPayload);
@@ -743,6 +778,9 @@ export async function runImport(envelope, data, options = {}) {
     }
 
     // Stale canonical dependency removal: delete canonical deps not in current snapshot.
+    // C6: A failure deleting a stale canonical Dependency is a PARTIAL import —
+    // the stale record remains, the failure must be visible, and the import must
+    // not claim synchronized/local_additions for that run.
     if (staleDependencyKeys.length) {
       for (const dep of staleDependencyKeys) {
         try {
@@ -750,6 +788,7 @@ export async function runImport(envelope, data, options = {}) {
           report.dependencies_deleted.push({ relationship_key: dep.relationship_key });
         } catch (e) {
           report.warnings.push({ entity: "Dependency", note: `stale dependency deletion failed: ${e.message}` });
+          partialFailure = true;
         }
       }
     }

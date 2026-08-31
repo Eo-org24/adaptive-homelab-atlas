@@ -1,22 +1,21 @@
-import React, { useState, useRef } from "react";
+import React, { useState } from "react";
 import { previewRepair, runRepair } from "@/lib/duplicateRepair";
 import { runImport, createBase44Adapter } from "@/lib/canonicalImport";
 import { Card } from "@/components/ui-bits";
-import { Wrench, Play, AlertTriangle, CheckCircle2, XCircle, Loader2, ArrowRight } from "lucide-react";
+import { Wrench, Play, AlertTriangle, CheckCircle2, XCircle, Loader2, ArrowRight, AlertCircle } from "lucide-react";
 
 // Operator-initiated duplicate-repair panel.
-// Appears when a canonical artifact is loaded. Preview is dry-run only;
-// Execute remaps references, deletes verified duplicates, then re-runs the
-// normal fresh-read importer to normalize canonical state.
-export default function DuplicateRepair({ envelope, data, complete, disabled, onAfterRepair }) {
+// C5: Uses the PARENT's shared mutation lock — no independent mutation authority.
+// C4: Honest partial failure — shows successful writes even when partial,
+//     never displays "Repair complete" for a partial repair,
+//     refreshes parent dataset after ANY repair attempt that may have written.
+export default function DuplicateRepair({ envelope, data, complete, disabled, busy, acquireLock, releaseLock, onAfterRepair }) {
   const [preview, setPreview] = useState(null);
   const [report, setReport] = useState(null);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const busyRef = useRef(false);
 
   const onPreview = () => {
-    if (!envelope || busy) return;
+    if (!envelope || busy || disabled) return;
     setError(""); setReport(null);
     try {
       setPreview(previewRepair(envelope, data));
@@ -26,30 +25,48 @@ export default function DuplicateRepair({ envelope, data, complete, disabled, on
   };
 
   const onExecute = async () => {
-    if (!envelope || busyRef.current || busy || disabled) return;
-    busyRef.current = true;
-    setBusy(true); setError(""); setReport(null);
+    if (!envelope || busy || disabled) return;
+    // C5: Acquire the shared lock synchronously before the first await
+    if (!acquireLock()) return;
+    setError(""); setReport(null);
     try {
       const adapter = createBase44Adapter();
       const r = await runRepair(envelope, { adapter });
-      if (!r.blocked && r.deleted.length > 0) {
-        // Re-run the normal fresh-read importer to normalize canonical state.
-        const reimport = await runImport(envelope, data, { adapter, complete: true });
-        r.reimport = reimport;
+
+      // If repair succeeded (not blocked, not partial), run re-import to normalize
+      if (!r.blocked && !r.partial && r.deleted.length > 0) {
+        try {
+          const reimport = await runImport(envelope, data, { adapter, complete: true });
+          r.reimport = reimport;
+          // C4: If re-import failed, mark recovery-required — do NOT report success
+          if (reimport.blocked || reimport.partial || reimport.sync_state === "import_blocked" || reimport.sync_state === "partial_failure") {
+            r.recoveryRequired = true;
+          }
+        } catch (e) {
+          r.reimportError = e.message;
+          r.recoveryRequired = true;
+        }
       }
+
       setReport(r);
-      if (!r.blocked && onAfterRepair) await onAfterRepair();
+      // C4: Always refresh parent dataset after ANY repair attempt that may have written
+      // (partial or complete). Blocked repairs with no writes don't need refresh.
+      if (!r.blocked || r.remapped.length > 0 || r.deleted.length > 0) {
+        if (onAfterRepair) await onAfterRepair();
+      }
     } catch (e) {
       setError(`Repair failed: ${e.message}`);
     } finally {
-      busyRef.current = false;
-      setBusy(false);
+      // C5: Release the shared lock in finally
+      releaseLock();
     }
   };
 
   if (!envelope) return null;
 
   const hasEligible = preview && preview.ready && preview.ready.length > 0;
+  const isPartial = report && (report.partial || report.recoveryRequired);
+  const isComplete = report && !report.blocked && !report.partial && !report.recoveryRequired;
 
   return (
     <Card className="p-4">
@@ -143,41 +160,81 @@ export default function DuplicateRepair({ envelope, data, complete, disabled, on
 
       {report && (
         <div className="mt-4 border-t border-border pt-3 space-y-2">
+          {/* C4: Honest status — never "Repair complete" for partial */}
           <div className="text-xs font-medium">
             {report.blocked ? (
               <span className="text-rose-500">Repair blocked: {report.blockedReason}</span>
-            ) : (
+            ) : isPartial ? (
+              <span className="text-rose-500 flex items-center gap-1">
+                <AlertCircle className="w-3.5 h-3.5" /> Recovery required — repair was partial
+              </span>
+            ) : isComplete ? (
               <span className="text-emerald-500">Repair complete</span>
-            )}
+            ) : null}
           </div>
-          {!report.blocked && (
-            <>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                <RepairStat label="Deleted" value={report.deleted.length} tone="rose" icon={XCircle} />
-                <RepairStat label="Remapped" value={report.remapped.length} tone="sky" icon={CheckCircle2} />
-                {report.reimport && (
-                  <RepairStat label="Re-import created" value={report.reimport.counts?.created || 0} tone="emerald" icon={CheckCircle2} />
-                )}
-              </div>
-              {report.deleted.length > 0 && (
-                <div>
-                  <div className="text-xs font-medium text-rose-500 mb-1">Deleted duplicate IDs</div>
-                  <ul className="space-y-0.5 max-h-32 overflow-auto">
-                    {report.deleted.map((d) => (
-                      <li key={d.id} className="text-xs font-mono text-muted-foreground">
-                        · {d.canonical_id} ({d.entity}): {d.id}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+
+          {/* C4: Show successful remaps/deletes even when partial */}
+          {(report.remapped.length > 0 || report.deleted.length > 0) && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              <RepairStat label="Deleted" value={report.deleted.length} tone="rose" icon={XCircle} />
+              <RepairStat label="Remapped" value={report.remapped.length} tone="sky" icon={CheckCircle2} />
               {report.reimport && (
-                <div className="text-xs text-muted-foreground">
-                  Post-repair import: created={report.reimport.counts?.created || 0}, updated={report.reimport.counts?.updated || 0},
-                  unchanged={report.reimport.counts?.unchanged || 0}, duplicates={report.reimport.counts?.conflicts || 0}
-                </div>
+                <RepairStat label="Re-import created" value={report.reimport.counts?.created || 0} tone="emerald" icon={CheckCircle2} />
               )}
-            </>
+            </div>
+          )}
+
+          {report.deleted.length > 0 && (
+            <div>
+              <div className="text-xs font-medium text-rose-500 mb-1">Deleted duplicate IDs</div>
+              <ul className="space-y-0.5 max-h-32 overflow-auto">
+                {report.deleted.map((d) => (
+                  <li key={d.id} className="text-xs font-mono text-muted-foreground">
+                    · {d.canonical_id} ({d.entity}): {d.id}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {report.remapped.length > 0 && (
+            <div>
+              <div className="text-xs font-medium text-sky-500 mb-1">Remapped records</div>
+              <ul className="space-y-0.5 max-h-32 overflow-auto">
+                {report.remapped.map((r, i) => (
+                  <li key={i} className="text-xs font-mono text-muted-foreground">
+                    · {r.entity} {r.id}: {r.fields.join(", ")}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* C4: Show failed operation details */}
+          {report.failedOperation && (
+            <div className="text-xs text-rose-500">
+              Failed: {report.failedOperation.phase} — {report.failedOperation.operation}: {report.failedOperation.reason}
+            </div>
+          )}
+
+          {/* C4: Database state uncertain */}
+          {report.databaseStateUncertain && (
+            <div className="text-xs text-rose-500 font-medium">
+              Database state uncertain — fresh read failed after partial repair
+            </div>
+          )}
+
+          {/* C4: Re-import result */}
+          {report.reimport && (
+            <div className="text-xs text-muted-foreground">
+              Post-repair import: created={report.reimport.counts?.created || 0}, updated={report.reimport.counts?.updated || 0},
+              unchanged={report.reimport.counts?.unchanged || 0}, duplicates={report.reimport.counts?.conflicts || 0}
+            </div>
+          )}
+          {report.reimportError && (
+            <div className="text-xs text-rose-500">
+              Post-repair import failed: {report.reimportError}
+            </div>
           )}
         </div>
       )}
