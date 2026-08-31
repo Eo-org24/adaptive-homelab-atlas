@@ -65,6 +65,13 @@
       "type": "string",
       "title": "Notes"
     },
+    "tags": {
+      "type": "array",
+      "title": "Tags",
+      "items": {
+        "type": "string"
+      }
+    },
     "canonical_id": {
       "type": "string",
       "title": "Canonical ID (e.g. execution-provider:tools1)"

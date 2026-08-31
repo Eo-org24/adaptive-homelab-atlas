@@ -224,11 +224,14 @@ describe("crossover: do not pollute real operational calculations (§18)", () =>
   it("tags fixture records as atlas-crossover-fixture", async () => {
     const { data } = await freshImport(ARTIFACT);
     expect(isFixture(data.Node[0])).toBe(true);
+    expect(isFixture(data.ExecutionEnvironment[0])).toBe(true);
     expect(isFixture(data.Workload[0])).toBe(true);
   });
   it("fixture records are not operational", async () => {
     const { data } = await freshImport(ARTIFACT);
     expect(isOperational(data.Node[0])).toBe(false);
+    expect(isOperational(data.ExecutionEnvironment[0])).toBe(false);
+    expect(isOperational(data.Workload[0])).toBe(false);
   });
   it("health engine excludes fixture node from capacity findings", async () => {
     const { data } = await freshImport(ARTIFACT);
