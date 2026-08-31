@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { useArchitectureDataset } from "@/hooks/useArchitectureDataset";
 import { validateEnvelope, previewImport, runImport, SAMPLE_ENVELOPE, GOLDEN_CROSSOVER, COMPREHENSIVE_V1_FIXTURE } from "@/lib/canonicalImport";
 import { overrideConflicts } from "@/lib/provenance";
@@ -33,6 +33,10 @@ export default function CanonicalImport() {
   const [busy, setBusy] = useState(false);
   const [conflicts, setConflicts] = useState([]);
   const [phase, setPhase] = useState(""); // "preview" | "imported"
+  const busyRef = useRef(false);
+
+  const clearStale = () => { setReport(null); setError(""); setConflicts([]); setPhase(""); };
+  const loadText = (t) => { setText(t); clearStale(); };
 
   const parse = () => {
     setError(""); setReport(null);
@@ -44,25 +48,29 @@ export default function CanonicalImport() {
   };
 
   const onPreview = () => {
+    if (busy || loading || incomplete) return;
     const env = parse(); if (!env) return;
     const r = previewImport(env, data, { complete });
     setReport(r); setPhase("preview"); setConflicts(overrideConflicts(env, data));
   };
 
   const onRun = async () => {
+    if (busyRef.current || busy || loading || incomplete) return;
     const env = parse(); if (!env) return;
+    busyRef.current = true;
     setBusy(true); setPhase("");
     try {
       const r = await runImport(env, data, { complete });
       setReport(r); setPhase("imported"); setConflicts(overrideConflicts(env, data));
     } catch (e) { setError(`Import failed: ${e.message}`); }
+    busyRef.current = false;
     setBusy(false);
   };
 
   const onFile = (e) => {
     const f = e.target.files?.[0]; if (!f) return;
     const reader = new FileReader();
-    reader.onload = () => setText(String(reader.result));
+    reader.onload = () => loadText(String(reader.result));
     reader.readAsText(f);
   };
 
@@ -105,18 +113,18 @@ export default function CanonicalImport() {
         <div className="flex items-center justify-between mb-2">
           <h3 className="text-sm font-medium">Canonical snapshot envelope</h3>
           <div className="flex items-center gap-2 flex-wrap">
-            <button onClick={() => setText(SAMPLE_ENVELOPE)} className="text-xs text-muted-foreground hover:text-foreground">Load sample</button>
-            <button onClick={() => setText(GOLDEN_CROSSOVER)} className="text-xs text-muted-foreground hover:text-foreground">Load golden crossover</button>
-            <button onClick={() => setText(COMPREHENSIVE_V1_FIXTURE)} className="text-xs text-muted-foreground hover:text-foreground">Load comprehensive V1</button>
-            <label className="text-xs flex items-center gap-1 cursor-pointer text-muted-foreground hover:text-foreground">
+            <button disabled={busy} onClick={() => loadText(SAMPLE_ENVELOPE)} className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-50">Load sample</button>
+            <button disabled={busy} onClick={() => loadText(GOLDEN_CROSSOVER)} className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-50">Load golden crossover</button>
+            <button disabled={busy} onClick={() => loadText(COMPREHENSIVE_V1_FIXTURE)} className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-50">Load comprehensive V1</button>
+            <label className={`text-xs flex items-center gap-1 ${busy ? "opacity-50 pointer-events-none" : "cursor-pointer text-muted-foreground hover:text-foreground"}`}>
               <Upload className="w-3.5 h-3.5" /> Upload file
-              <input type="file" accept=".json,application/json" className="hidden" onChange={onFile} />
+              <input type="file" accept=".json,application/json" className="hidden" onChange={onFile} disabled={busy} />
             </label>
           </div>
         </div>
         <textarea
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => loadText(e.target.value)}
           placeholder='Paste a canonical snapshot envelope here. Must include "schema_version": "adaptive-homelab-atlas/v1".'
           className="w-full h-64 rounded-md border border-input bg-background px-3 py-2 text-xs font-mono"
         />
@@ -160,7 +168,7 @@ export default function CanonicalImport() {
           <ReportSection title="Unchanged" items={report.unchanged} tone="zinc" render={(i) => `${i.entity}: ${i.canonical_id}`} />
           <ReportSection title="Failed" items={report.failed} tone="rose" render={(i) => i.reason || `${i.entity}: ${i.canonical_id || ""} ${i.reason || ""}`} />
           <ReportSection title="Unresolved references" items={report.unresolved} tone="amber" render={(i) => `${i.entity} ${i.canonical_id}: ${i.field} → ${Array.isArray(i.refs) ? i.refs.join(", ") : i.ref} (${i.target || "external"})`} />
-          <ReportSection title="Duplicate canonical IDs (conflicts)" items={report.conflicts} tone="rose" render={(i) => `${i.canonical_id} (first at ${i.first?.join(":")}, duplicate at ${i.duplicate?.join(":")})`} />
+          <ReportSection title="Duplicate canonical IDs (conflicts)" items={report.conflicts} tone="rose" render={(i) => `${i.canonical_id} (first at ${Array.isArray(i.first) ? i.first.join(":") : i.first}, duplicate at ${Array.isArray(i.duplicate) ? i.duplicate.join(":") : i.duplicate})`} />
           <ReportSection title="Warnings" items={report.warnings} tone="amber" render={(i) => `${i.entity} ${i.canonical_id || ""}: ${i.field || ""} ${i.note || i.ref || ""}`} />
           <ReportSection title="Relationships resolved" items={report.relationships} tone="sky" render={(i) => `${i.source} —${i.type}→ ${i.target}`} />
           <ReportSection title="Dependencies created" items={report.dependencies_created} tone="emerald" render={(i) => i.relationship_key} />
