@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { useAllEntities } from "@/hooks/useEntities";
 import { PageHeader, Card } from "@/components/ui-bits";
-import { fmtGB, nodeAllocations, nodeStorageRaw, nodeStorageUsable, directHostedWorkloads, environmentUsage, scorePlacement } from "@/lib/homelab";
+import { fmtGB, nodeAllocations, nodeStorageRaw, nodeStorageUsable, directHostedWorkloads, environmentUsage, scorePlacement, aggregateKnown } from "@/lib/homelab";
 import { EligibilityBadge, ConstraintRow, PriorityRow } from "@/components/PlacementBits";
 import { Boxes, Cpu, MemoryStick, Monitor, HardDrive } from "lucide-react";
 
@@ -43,19 +43,24 @@ export default function Capacity() {
     return { wl, node, res: scorePlacement(wl, node, { envs, workloads, pools }) };
   }, [hypWL, hypNode, workloads, nodes, envs, pools]);
 
-  if (loading) return <div className="p-6"><div className="w-8 h-8 border-4 border-muted border-t-foreground rounded-full animate-spin mx-auto mt-20" /></div>;
-
   const cpuCap = (n) => (n.logical_cpus != null ? n.logical_cpus : n.physical_cores);
+  const cpuAgg = useMemo(() => nodes.map((n) => ({ v: cpuCap(n) })), [nodes]);
+  const cpuKnown = useMemo(() => aggregateKnown(cpuAgg, "v"), [cpuAgg]);
+  const ramAgg = useMemo(() => aggregateKnown(nodes, "ram_capacity_gb"), [nodes]);
+  const vramAgg = useMemo(() => aggregateKnown(nodes, "gpu_vram_gb"), [nodes]);
+  const poolAgg = useMemo(() => aggregateKnown(pools, "usable_capacity_gb"), [pools]);
+
+  if (loading) return <div className="p-6"><div className="w-8 h-8 border-4 border-muted border-t-foreground rounded-full animate-spin mx-auto mt-20" /></div>;
 
   return (
     <div className="p-6 max-w-[1600px] mx-auto">
       <PageHeader title="Capacity" description="Documented capacity versus allocation across physical nodes and execution environments. No remote control — documented state only." />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <Card className="p-4"><div className="flex items-center gap-2 text-muted-foreground text-xs"><Cpu className="w-3.5 h-3.5" /> Total CPU</div><div className="text-2xl font-semibold mt-1">{nodes.reduce((s, n) => s + (cpuCap(n) || 0), 0)}</div><div className="text-xs text-muted-foreground">logical CPUs</div></Card>
-        <Card className="p-4"><div className="flex items-center gap-2 text-muted-foreground text-xs"><MemoryStick className="w-3.5 h-3.5" /> Total RAM</div><div className="text-2xl font-semibold mt-1">{fmtGB(nodes.reduce((s, n) => s + (n.ram_capacity_gb || 0), 0))}</div></Card>
-        <Card className="p-4"><div className="flex items-center gap-2 text-muted-foreground text-xs"><Monitor className="w-3.5 h-3.5" /> GPU VRAM</div><div className="text-2xl font-semibold mt-1">{fmtGB(nodes.reduce((s, n) => s + (n.gpu_vram_gb || 0), 0))}</div></Card>
-        <Card className="p-4"><div className="flex items-center gap-2 text-muted-foreground text-xs"><HardDrive className="w-3.5 h-3.5" /> Pools usable</div><div className="text-2xl font-semibold mt-1">{fmtGB(pools.reduce((s, p) => s + (p.usable_capacity_gb || 0), 0))}</div></Card>
+        <Card className="p-4"><div className="flex items-center gap-2 text-muted-foreground text-xs"><Cpu className="w-3.5 h-3.5" /> Total CPU</div><div className="text-2xl font-semibold mt-1">{cpuKnown.sum}</div><div className="text-xs text-muted-foreground">{cpuKnown.unknownCount > 0 ? `${cpuKnown.unknownCount} node${cpuKnown.unknownCount !== 1 ? "s" : ""} undocumented` : "logical CPUs"}</div></Card>
+        <Card className="p-4"><div className="flex items-center gap-2 text-muted-foreground text-xs"><MemoryStick className="w-3.5 h-3.5" /> Total RAM</div><div className="text-2xl font-semibold mt-1">{fmtGB(ramAgg.sum)}</div><div className="text-xs text-muted-foreground">{ramAgg.unknownCount > 0 ? `${ramAgg.unknownCount} node${ramAgg.unknownCount !== 1 ? "s" : ""} undocumented` : "documented capacity"}</div></Card>
+        <Card className="p-4"><div className="flex items-center gap-2 text-muted-foreground text-xs"><Monitor className="w-3.5 h-3.5" /> GPU VRAM</div><div className="text-2xl font-semibold mt-1">{fmtGB(vramAgg.sum)}</div><div className="text-xs text-muted-foreground">{vramAgg.unknownCount > 0 ? `${vramAgg.unknownCount} node${vramAgg.unknownCount !== 1 ? "s" : ""} undocumented` : "documented capacity"}</div></Card>
+        <Card className="p-4"><div className="flex items-center gap-2 text-muted-foreground text-xs"><HardDrive className="w-3.5 h-3.5" /> Pools usable</div><div className="text-2xl font-semibold mt-1">{fmtGB(poolAgg.sum)}</div><div className="text-xs text-muted-foreground">{poolAgg.unknownCount > 0 ? `${poolAgg.unknownCount} pool${poolAgg.unknownCount !== 1 ? "s" : ""} undocumented` : "documented capacity"}</div></Card>
       </div>
 
       <div className="space-y-4">

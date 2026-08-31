@@ -1,4 +1,5 @@
 import { base44 } from "@/api/base44Client";
+import { isSample } from "@/lib/provenance";
 
 // ---------- Entity names ----------
 export const ENTITY_NAMES = {
@@ -154,6 +155,19 @@ export function timeAgo(d) {
   const d2 = Math.floor(h / 24);
   if (d2 < 30) return `${d2}d ago`;
   return fmtDate(d);
+}
+
+// ---------- Completeness-aware aggregates ----------
+// Sum a numeric field across records, counting records where the field is absent/NaN as "unknown".
+// Use for capacity summary cards so undocumented capacity is surfaced, not silently dropped.
+export function aggregateKnown(records, field) {
+  let sum = 0, unknownCount = 0;
+  (records || []).forEach((r) => {
+    const v = r ? r[field] : null;
+    if (v == null || (typeof v === "number" && isNaN(v))) unknownCount++;
+    else sum += Number(v) || 0;
+  });
+  return { sum, unknownCount, knownCount: (records || []).length - unknownCount };
 }
 
 // ---------- Export ----------
@@ -355,7 +369,7 @@ export function scorePlacement(workload, node, opts = {}) {
   const envs = opts.envs || [];
   const workloads = opts.workloads || [];
   const pools = opts.pools || [];
-  const others = workloads.filter((w) => w.id !== workload.id);
+  const others = workloads.filter((w) => w.id !== workload.id && !isSample(w));
   const envById = new Map(envs.map((e) => [e.id, e]));
   const env = workload.current_environment ? envById.get(workload.current_environment) : null;
   const inEnv = !!(env && env.current_host === node.id);
