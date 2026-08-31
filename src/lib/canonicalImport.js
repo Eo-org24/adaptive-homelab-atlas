@@ -451,11 +451,21 @@ function dependencyRelationshipKey(source, target) {
 }
 
 // Apply V1 unified relationships. Returns { updatesByEntity, dependenciesToUpsert, staleDependencyKeys }.
-// For canonical-owned arrays: REPLACE with snapshot set (stale removal).
+// For canonical-owned arrays: group by (source object, field) and accumulate targets into
+// a single set — multiple relationships of the same type do NOT overwrite each other.
+// For canonical-owned scalars (hosted_on): set directly (last wins; only one per source).
 // For depends_on: collect Dependency upserts keyed by relationship_key.
-function applyUnifiedRelationships(relationships, lookups, report, allowPartialRefs, existingDeps) {
-  const updatesByEntity = {};
-  const dependenciesToUpsert = []; // { relationship_key, source_id, target_id, meta }
+//
+// Empty-set reconciliation: for every canonical V1 source entity in the current import,
+// if the snapshot contains NO relationship of a canonical-owned type for that entity,
+// clear the corresponding field to [] (arrays) or "" (scalar). This removes stale
+// canonical relationship state from previous snapshots. Atlas-local overlays
+// (preferred_node, eligible_alternative_nodes, field_provenance) are NOT touched.
+function applyUnifiedRelationships(relationships, plans, lookups, report, allowPartialRefs, existingDeps) {
+  // Accumulation: Map<id, { id, [field]: value }> per entity.
+  // Array fields are accumulated (deduplicated). Scalar fields are set (last wins).
+  const accumByEntity = {};
+  const dependenciesToUpsert = [];
   const snapshotDepKeys = new Set();
 
   // Index existing canonical dependencies by relationship_key.
@@ -463,6 +473,19 @@ function applyUnifiedRelationships(relationships, lookups, report, allowPartialR
   (existingDeps || []).forEach((d) => {
     if (d.source_kind === "canonical" && d.relationship_key) existingByKey.set(d.relationship_key, d);
   });
+
+  // Track which relationship types appear in the snapshot per source canonical_id.
+  const snapshotRelBySource = {};
+  relationships.forEach((r) => {
+    if (!snapshotRelBySource[r.source]) snapshotRelBySource[r.source] = new Set();
+    snapshotRelBySource[r.source].add(r.type);
+  });
+
+  const getAccum = (entity, id) => {
+    if (!accumByEntity[entity]) accumByEntity[entity] = new Map();
+    if (!accumByEntity[entity].has(id)) accumByEntity[entity].set(id, { id });
+    return accumByEntity[entity].get(id);
+  };
 
   relationships.forEach((r) => {
     const s = parseTypedId(r.source), t = parseTypedId(r.target);
@@ -482,13 +505,43 @@ function applyUnifiedRelationships(relationships, lookups, report, allowPartialR
       dependenciesToUpsert.push({ relationship_key: relKey, source_id: srcRec.id, target_id: tgtRec.id, existing: existingByKey.get(relKey) || null });
       report.relationships.push({ source: r.source, type: r.type, target: r.target, resolvable: true });
     } else if (def.array) {
-      // Canonical-owned array: REPLACE with snapshot set (stale removal).
-      (updatesByEntity[srcEntity] ||= []).push({ id: srcRec.id, [def.field]: [tgtRec.id] });
+      // Canonical-owned array: ACCUMULATE targets into a single set (deduplicated).
+      const entry = getAccum(srcEntity, srcRec.id);
+      const cur = entry[def.field] || [];
+      if (!cur.includes(tgtRec.id)) cur.push(tgtRec.id);
+      entry[def.field] = cur;
       report.relationships.push({ source: r.source, type: r.type, target: r.target, resolvable: true });
     } else {
-      (updatesByEntity[srcEntity] ||= []).push({ id: srcRec.id, [def.field]: tgtRec.id });
+      // Canonical-owned scalar: set directly.
+      const entry = getAccum(srcEntity, srcRec.id);
+      entry[def.field] = tgtRec.id;
       report.relationships.push({ source: r.source, type: r.type, target: r.target, resolvable: true });
     }
+  });
+
+  // ---- Empty-set reconciliation ----
+  // For each canonical V1 source entity in the current import, clear canonical-owned
+  // fields that have NO relationships in the snapshot. This removes stale canonical
+  // relationship state from previous imports. Atlas-local overlays are NOT touched.
+  const CANONICAL_OWNED_FIELDS = {
+    ExecutionEnvironment: [{ relType: "hosted_on", field: "current_host", clearValue: "" }],
+    Workload: [
+      { relType: "placement_allowed_on_provider", field: "eligible_execution_providers", clearValue: [] },
+      { relType: "placement_allowed_on_node", field: "placement_allowed_nodes", clearValue: [] },
+    ],
+  };
+  (plans || []).forEach((p) => {
+    const fields = CANONICAL_OWNED_FIELDS[p.entity];
+    if (!fields) return;
+    const rec = resolveRef(p.entity, p.canonical_id, lookups);
+    if (!rec) return;
+    const relTypes = snapshotRelBySource[p.canonical_id] || new Set();
+    fields.forEach(({ relType, field, clearValue }) => {
+      if (!relTypes.has(relType)) {
+        const entry = getAccum(p.entity, rec.id);
+        entry[field] = clearValue;
+      }
+    });
   });
 
   // Stale canonical dependencies: keys in existing but NOT in current snapshot.
@@ -496,6 +549,12 @@ function applyUnifiedRelationships(relationships, lookups, report, allowPartialR
   existingByKey.forEach((dep, key) => {
     if (!snapshotDepKeys.has(key)) staleDependencyKeys.push(dep);
   });
+
+  // Convert Maps to arrays for the caller.
+  const updatesByEntity = {};
+  for (const entity of Object.keys(accumByEntity)) {
+    updatesByEntity[entity] = Array.from(accumByEntity[entity].values());
+  }
 
   return { updatesByEntity, dependenciesToUpsert, staleDependencyKeys };
 }
@@ -599,7 +658,7 @@ export async function runImport(envelope, data, options = {}) {
     let staleDependencyKeys = [];
 
     if (plan.format === "unified") {
-      const relResult = applyUnifiedRelationships(plan.relationships, lookups, report, allowPartialRefs, fresh.Dependency || []);
+      const relResult = applyUnifiedRelationships(plan.relationships, plan.plans, lookups, report, allowPartialRefs, fresh.Dependency || []);
       Object.assign(updatesByEntity, relResult.updatesByEntity);
       dependenciesToUpsert = relResult.dependenciesToUpsert;
       staleDependencyKeys = relResult.staleDependencyKeys;

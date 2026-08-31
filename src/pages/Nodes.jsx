@@ -3,7 +3,7 @@ import EntityCrudPage from "@/components/EntityCrudPage";
 import { useAllEntities } from "@/hooks/useEntities";
 import { RelatedList, SpecGrid, Section } from "@/components/Related";
 import MaintenanceList from "@/components/MaintenanceList";
-import { fmtGB, lifecycleTone, badgeClass, StatusBadge, fmtDate } from "@/lib/homelab";
+import { fmtGB, fmtMemory, lifecycleTone, badgeClass, StatusBadge, fmtDate } from "@/lib/homelab";
 import { nodeHostedWorkloads } from "@/lib/relationships";
 import ObjectFindings from "@/components/ObjectFindings";
 import ProvenanceSection from "@/components/ProvenanceSection";
@@ -13,7 +13,7 @@ const COLUMNS = [
   { key: "node_type", label: "Type", render: (r) => <span className="capitalize">{r.node_type}</span> },
   { key: "lifecycle_state", label: "State", tone: (r) => lifecycleTone(r.lifecycle_state), render: (r) => <StatusBadge value={r.lifecycle_state} tone={lifecycleTone(r.lifecycle_state)} /> },
   { key: "cpu", label: "CPU", get: (r) => r.cpu_model, render: (r) => <span className="text-xs text-muted-foreground">{r.cpu_model || "—"}</span> },
-  { key: "ram", label: "RAM", get: (r) => fmtGB(r.ram_capacity_gb), render: (r) => fmtGB(r.ram_capacity_gb) },
+  { key: "ram", label: "RAM", get: (r) => fmtMemory(r), render: (r) => fmtMemory(r) },
   { key: "gpu", label: "GPU VRAM", get: (r) => fmtGB(r.gpu_vram_gb), render: (r) => fmtGB(r.gpu_vram_gb) },
   { key: "availability", label: "Availability", render: (r) => <span className="capitalize text-xs">{(r.availability_expectation || "").replace(/_/g, " ")}</span> },
 ];
@@ -37,7 +37,7 @@ export default function Nodes() {
         { label: "Motherboard", value: n.motherboard },
         { label: "CPU", value: n.cpu_model },
         { label: "Sockets / Cores / Logical", value: `${n.socket_count || 1} / ${n.physical_cores || 0} / ${n.logical_cpus || 0}` },
-        { label: "RAM", value: `${fmtGB(n.ram_capacity_gb)}${n.ram_configuration ? ` · ${n.ram_configuration}` : ""}` },
+        { label: "RAM", value: `${fmtMemory(n)}${n.ram_configuration ? ` · ${n.ram_configuration}` : ""}` },
         { label: "GPU VRAM", value: fmtGB(n.gpu_vram_gb) },
         { label: "GPUs", value: (n.gpus || []).join(", ") },
         { label: "NICs", value: (n.nics || []).join(", ") },

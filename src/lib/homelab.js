@@ -274,6 +274,35 @@ export function nodeMemoryCapacity(node) {
   return { value: null, unit: null, source: null };
 }
 
+// Normalized memory capacity in GB (for comparison with GB-denominated allocations).
+// Converts GiB -> GB explicitly (1 GiB = 1.073741824 GB) so that GB allocations are
+// never silently compared against GiB physical capacity as identical quantities.
+export function memoryCapacityGB(node) {
+  const cap = nodeMemoryCapacity(node);
+  if (cap.value == null) return null;
+  if (cap.unit === "GiB") return cap.value * 1.073741824;
+  return cap.value; // already GB
+}
+
+// Unit-aware memory formatter: formats a numeric value with the given unit.
+// GiB -> GiB/TiB; GB -> GB/TB. Never labels a GiB value as GB.
+export function fmtMemValue(value, unit) {
+  if (value == null || isNaN(value)) return "—";
+  if (unit === "GiB") {
+    if (value >= 1024) return `${(value / 1024).toFixed(1)} TiB`;
+    return `${Math.round(value)} GiB`;
+  }
+  // legacy GB (or unspecified unit — default to GB)
+  if (value >= 1000) return `${(value / 1000).toFixed(1)} TB`;
+  return `${Math.round(value)} GB`;
+}
+
+// Format a node's memory capacity using its own declared unit (GiB or GB).
+export function fmtMemory(node) {
+  const cap = nodeMemoryCapacity(node);
+  return fmtMemValue(cap.value, cap.unit);
+}
+
 // ---------- Resource accounting layers ----------
 // Layer 1 PHYSICAL NODE CAPACITY · Layer 2 ENVIRONMENT ALLOCATION · Layer 3 WORKLOAD REQUIREMENT.
 // A workload inside an environment is counted via its environment's reservation, NOT directly against the node.
@@ -347,7 +376,7 @@ export function nodeOversubscription(node, workloads, environments, pools) {
   const out = {};
   const cpuCap = node.logical_cpus != null ? node.logical_cpus : node.physical_cores;
   if (cpuCap != null && alloc.cpu > cpuCap) out.cpu = alloc.cpu - cpuCap;
-  const memCap = nodeMemoryCapacity(node).value;
+  const memCap = memoryCapacityGB(node);
   if (memCap != null && alloc.ram > memCap) out.ram = alloc.ram - memCap;
   const su = nodeStorageUsable(node, pools);
   if (su.known && alloc.storage > su.usable) out.storage = alloc.storage - su.usable;
@@ -411,7 +440,7 @@ export function scorePlacement(workload, node, opts = {}) {
       else if (need.ram > cap - envUsage.ram) hc("ram", "RAM", "fail", `need ${need.ram}GB > env free ${(cap - envUsage.ram).toFixed(0)}GB of ${cap}GB`);
       else hc("ram", "RAM", "pass", `env free ${(cap - envUsage.ram).toFixed(0)}GB of ${cap}GB after placement`);
     } else {
-      const cap = nodeMemoryCapacity(node).value;
+      const cap = memoryCapacityGB(node);
       if (cap == null) hc("ram", "RAM", "unknown", "node RAM capacity not documented");
       else if (need.ram > cap - nodeAlloc.ram) hc("ram", "RAM", "fail", `need ${need.ram}GB > node free ${(cap - nodeAlloc.ram).toFixed(0)}GB of ${cap}GB`);
       else hc("ram", "RAM", "pass", `node free ${(cap - nodeAlloc.ram).toFixed(0)}GB of ${cap}GB after placement`);
@@ -529,7 +558,7 @@ export function scorePlacement(workload, node, opts = {}) {
 
   // 4. Scalability — headroom on the binding resource
   let scScore, scState, scReason;
-  const bCap = inEnv ? env.ram_allocation_gb : nodeMemoryCapacity(node).value;
+  const bCap = inEnv ? env.ram_allocation_gb : memoryCapacityGB(node);
   const bUsed = inEnv ? (envUsage ? envUsage.ram : 0) : nodeAlloc.ram;
   if (bCap == null) { scScore = 0; scState = "unknown"; scReason = "Capacity data insufficient to evaluate headroom"; }
   else {

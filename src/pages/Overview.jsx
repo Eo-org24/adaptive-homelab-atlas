@@ -9,7 +9,7 @@ import { useAllEntities } from "@/hooks/useEntities";
 import { StatCard, Card, EmptyState } from "@/components/ui-bits";
 import {
   fmtGB, fmtDate, timeAgo, lifecycleTone, criticalityTone, riskTone, badgeClass, StatusBadge,
-  nodeAllocations, typedRefName,
+  nodeAllocations, typedRefName, memoryCapacityGB,
 } from "@/lib/homelab";
 import { runHealthChecks } from "@/lib/healthEngine";
 import { normalizeSourceKind, readFieldProvenance, staleStatus } from "@/lib/provenance";
@@ -55,7 +55,7 @@ export default function Overview() {
 
   const stats = useMemo(() => {
     const activeNodes = nodes.filter((n) => !["retired", "planned"].includes(n.lifecycle_state));
-    const totalRam = nodes.reduce((s, n) => s + (n.ram_capacity_gb || 0), 0);
+    const totalRam = nodes.reduce((s, n) => s + (memoryCapacityGB(n) || 0), 0);
     const totalCpu = nodes.reduce((s, n) => s + (n.logical_cpus || n.physical_cores || 0), 0);
     const totalVram = nodes.reduce((s, n) => s + (n.gpu_vram_gb || 0), 0);
     const usableStorage = storage.filter((s) => s.health !== "retired").reduce((s, d) => s + (d.capacity_gb || 0), 0);
@@ -68,7 +68,7 @@ export default function Overview() {
     };
   }, [nodes, workloads, envs, storage, changes, tasks, deps, findings]);
 
-  const ramByNode = nodes.map((n) => ({ name: n.hostname, allocated: nodeAllocations(n, workloads, envs).ram, total: n.ram_capacity_gb || 0 }));
+  const ramByNode = nodes.map((n) => ({ name: n.hostname, allocated: nodeAllocations(n, workloads, envs).ram, total: memoryCapacityGB(n) || 0 }));
   const cpuByNode = nodes.map((n) => ({ name: n.hostname, allocated: nodeAllocations(n, workloads, envs).cpu, total: n.logical_cpus || n.physical_cores || 0 }));
   const storageByMedia = useMemo(() => {
     const m = {};

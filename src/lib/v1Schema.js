@@ -25,17 +25,17 @@ const provenanceSchema = z.object({
   source_class: z.literal("canonical"),
 }).strict();
 
-// ---- Entity base (shared by all kinds) ----
-const entityBase = {
-  schema: z.string().min(1),
-  kind: z.string().min(1),
+// ---- Entity common fields (kind/schema are literal per kind for discriminated validation) ----
+const entityCommon = {
   id: z.string().min(1),
   provenance: provenanceSchema,
 };
 
-// ---- Node (homelab.node/v1) ----
+// ---- Node (homelab.node/v1) — kind: literal "node" ----
 const nodeSchema = z.object({
-  ...entityBase,
+  ...entityCommon,
+  schema: z.literal("homelab.node/v1"),
+  kind: z.literal("node"),
   identity: z.object({
     physical_name: z.string().optional(),
     fqdn: z.string().optional(),
@@ -56,9 +56,11 @@ const nodeSchema = z.object({
   }).strict().optional(),
 }).strict();
 
-// ---- Execution Provider (homelab.execution-provider/v1) ----
+// ---- Execution Provider (homelab.execution-provider/v1) — kind: literal "execution-provider" ----
 const providerSchema = z.object({
-  ...entityBase,
+  ...entityCommon,
+  schema: z.literal("homelab.execution-provider/v1"),
+  kind: z.literal("execution-provider"),
   purpose: z.array(z.string()).optional(),
   runtime: z.object({
     kind: z.string().optional(),
@@ -67,9 +69,11 @@ const providerSchema = z.object({
   capabilities: z.array(capabilitySchema).optional(),
 }).strict();
 
-// ---- Workload (homelab.workload/v1) ----
+// ---- Workload (homelab.workload/v1) — kind: literal "workload" ----
 const workloadSchema = z.object({
-  ...entityBase,
+  ...entityCommon,
+  schema: z.literal("homelab.workload/v1"),
+  kind: z.literal("workload"),
   display_name: z.string().optional(),
   maturity: z.string().optional(),
   runtime: z.object({
@@ -116,7 +120,7 @@ const envelopeSchema = z.object({
     is_dirty: z.boolean(),
     content_digest: contentDigestSchema.optional(),
   }).strict(),
-  entities: z.array(z.union([nodeSchema, providerSchema, workloadSchema])),
+  entities: z.array(z.discriminatedUnion("kind", [nodeSchema, providerSchema, workloadSchema])),
   relationships: z.array(relationshipSchema),
 }).strict();
 
@@ -186,15 +190,16 @@ export function validateV1Strict(envelope) {
       errors.push(`${iss.path.join(".") || "(root)"}: ${iss.message}`);
     });
   }
-  // If envelope shape is valid, validate cross-field consistency
-  if (envResult.success) {
-    const kindErrors = validateEntityKinds(envelope.entities);
-    const schemaKindErrors = validateSchemaKindConsistency(envelope.entities);
-    const relKindErrors = validateRelationshipKinds(envelope.relationships);
-    kindErrors.forEach((e) => errors.push(`${e.path.join(".")}: ${e.message}`));
-    schemaKindErrors.forEach((e) => errors.push(`${e.path.join(".")}: ${e.message}`));
-    relKindErrors.forEach((e) => errors.push(`${e.path.join(".")}: ${e.message}`));
-  }
+  // Always run cross-field checks for clear, specific error messages.
+  // Zod's discriminatedUnion already rejects unknown kinds and shape mismatches,
+  // but these produce the human-readable "unknown entity kind" / "source kind" /
+  // "target kind" messages that tests and operators rely on.
+  const kindErrors = validateEntityKinds(envelope.entities);
+  const schemaKindErrors = validateSchemaKindConsistency(envelope.entities);
+  const relKindErrors = validateRelationshipKinds(envelope.relationships);
+  kindErrors.forEach((e) => errors.push(`${e.path.join(".")}: ${e.message}`));
+  schemaKindErrors.forEach((e) => errors.push(`${e.path.join(".")}: ${e.message}`));
+  relKindErrors.forEach((e) => errors.push(`${e.path.join(".")}: ${e.message}`));
   return { valid: errors.length === 0, errors };
 }
 
