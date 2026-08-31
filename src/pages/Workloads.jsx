@@ -52,12 +52,13 @@ export default function Workloads() {
       <div className="space-y-4">
         {w.description && <p className="text-sm text-muted-foreground">{w.description}</p>}
         <SpecGrid fields={[
+          { label: "Canonical ID", value: <span className="font-mono text-xs">{w.canonical_id || "—"}</span> },
           { label: "Category", value: (w.category || "").replace(/_/g, " ") },
           { label: "Criticality", value: <StatusBadge value={w.criticality} tone={criticalityTone(w.criticality)} /> },
           { label: "Lifecycle", value: <StatusBadge value={w.lifecycle} tone={lifecycleTone(w.lifecycle)} /> },
           { label: "State class", value: <StatusBadge value={w.state_classification} tone={stateClassTone(w.state_classification)} /> },
-          { label: "Execution environment", value: w.current_environment_name || "—" },
-          { label: "Physical realization", value: w.current_host_name ? `${w.current_host_name} (via environment)` : "—" },
+          { label: "Current execution environment", value: w.current_environment_name || "Not declared" },
+          { label: "Current physical realization", value: w.current_host_name ? `${w.current_host_name} (via environment)` : "Not declared" },
           { label: "Preferred node", value: w.preferred_node_name || "—" },
           { label: "Availability", value: (w.availability_requirement || "").replace(/_/g, " ") },
           { label: "CPU req", value: w.cpu_requirement ? `${w.cpu_requirement} cores` : "—" },
@@ -77,6 +78,30 @@ export default function Workloads() {
                 return n ? <span key={id} className={badgeClass("sky")}>{n.hostname}</span> : null;
               })}
             </div>
+          </Section>
+        )}
+        {(w.eligible_execution_providers || []).length > 0 && (
+          <Section title="Placement-eligible execution providers (eligibility only — not current realization)">
+            <div className="flex flex-wrap gap-1.5">
+              {w.eligible_execution_providers.map((id) => {
+                const e = envs.find((x) => x.id === id);
+                return e ? <span key={id} className={badgeClass("violet")}>{e.name}</span> : null;
+              })}
+            </div>
+          </Section>
+        )}
+        {(w.capability_requirements || []).length > 0 && (
+          <Section title="Capability requirements (preserved, not resolved)">
+            <ul className="space-y-1">
+              {w.capability_requirements.map((req, i) => (
+                <li key={i} className="text-xs">
+                  <span className="font-mono">{req.type || "?"}</span>
+                  {req.instance ? <> · instance <span className="font-mono">{req.instance}</span></> : null}
+                  <span className="ml-2 text-amber-500">resolution: unresolved / ambiguous</span>
+                </li>
+              ))}
+            </ul>
+            <p className="text-[11px] text-muted-foreground mt-1">Named capability instance scope is not canonically defined; Atlas does not bind a requirement instance to a node capability declaration.</p>
           </Section>
         )}
         {(w.tags || []).length > 0 && <div className="flex flex-wrap gap-1.5">{w.tags.map((t) => <span key={t} className={badgeClass("zinc")}>{t}</span>)}</div>}

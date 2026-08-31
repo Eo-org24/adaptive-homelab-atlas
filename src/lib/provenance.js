@@ -21,6 +21,24 @@ export function isSample(rec) {
   return normalizeSourceKind(rec.source_kind || rec.state_classification) === "sample";
 }
 
+// A record is a synthetic crossover fixture when it carries the
+// `atlas-crossover-fixture` tag. Fixtures are canonical (source_kind unchanged)
+// but must be excluded from real-infrastructure operational calculations so the
+// crossover test data never pollutes live homelab totals or placement candidates.
+export const FIXTURE_TAG = "atlas-crossover-fixture";
+export function isFixture(rec) {
+  if (!rec) return false;
+  return Array.isArray(rec.tags) && rec.tags.includes(FIXTURE_TAG);
+}
+
+// A record participates in real operational calculations only when it is neither
+// sample data nor a synthetic crossover fixture. Provenance/identity/data-quality
+// checks still run on the full set; this gate is for capacity/placement/health
+// aggregates only.
+export function isOperational(rec) {
+  return !isSample(rec) && !isFixture(rec);
+}
+
 // Return a dataset copy with sample records removed from every entity array.
 // When includeSample is true (or no data), returns the input unchanged.
 export function realDataset(data, { includeSample = false } = {}) {

@@ -1,5 +1,5 @@
 import { base44 } from "@/api/base44Client";
-import { isSample } from "@/lib/provenance";
+import { isSample, isFixture } from "@/lib/provenance";
 
 // ---------- Entity names ----------
 export const ENTITY_NAMES = {
@@ -369,7 +369,7 @@ export function scorePlacement(workload, node, opts = {}) {
   const envs = opts.envs || [];
   const workloads = opts.workloads || [];
   const pools = opts.pools || [];
-  const others = workloads.filter((w) => w.id !== workload.id && !isSample(w));
+  const others = workloads.filter((w) => w.id !== workload.id && !isSample(w) && !isFixture(w));
   const envById = new Map(envs.map((e) => [e.id, e]));
   const env = workload.current_environment ? envById.get(workload.current_environment) : null;
   const inEnv = !!(env && env.current_host === node.id);

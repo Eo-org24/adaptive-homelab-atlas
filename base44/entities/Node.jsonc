@@ -79,6 +79,22 @@
         "type": "string"
       }
     },
+    "capabilities": {
+      "type": "array",
+      "title": "Capability declarations",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      }
+    },
     "power_supply": {
       "type": "string",
       "title": "Power supply"

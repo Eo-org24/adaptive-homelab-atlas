@@ -47,6 +47,13 @@
         "type": "string"
       }
     },
+    "eligible_execution_providers": {
+      "type": "array",
+      "title": "Placement-eligible execution providers (ids) \u2014 NOT current realization",
+      "items": {
+        "type": "string"
+      }
+    },
     "cpu_requirement": {
       "type": "number",
       "title": "CPU requirement (cores)"
@@ -81,9 +88,25 @@
     },
     "required_capabilities": {
       "type": "array",
-      "title": "Required capabilities",
+      "title": "Required capabilities (free text)",
       "items": {
         "type": "string"
+      }
+    },
+    "capability_requirements": {
+      "type": "array",
+      "title": "Structured capability requirements",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "instance": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
       }
     },
     "availability_requirement": {

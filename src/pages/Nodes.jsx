@@ -48,6 +48,16 @@ export default function Nodes() {
         { label: "Availability", value: (n.availability_expectation || "").replace(/_/g, " ") },
         { label: "Location", value: n.physical_location },
       ]} />
+      {(n.capabilities || []).length > 0 && (
+        <Section title="Capability declarations">
+          <ul className="space-y-1">
+            {(n.capabilities || []).map((c, i) => (
+              <li key={i} className="text-xs"><span className="font-mono">{c.type || "?"}</span>{c.id ? <> · id <span className="font-mono">{c.id}</span></> : null}</li>
+            ))}
+          </ul>
+          <p className="text-[11px] text-muted-foreground mt-1">Structured declaration preserved verbatim. Atlas does not claim a workload's named-instance requirement is fulfilled by a declaration of the same id.</p>
+        </Section>
+      )}
       {n.notes && <Section title="Notes"><p className="text-sm whitespace-pre-wrap">{n.notes}</p></Section>}
       {(n.tags || []).length > 0 && <div className="flex flex-wrap gap-1.5">{n.tags.map((t) => <span key={t} className={badgeClass("zinc")}>{t}</span>)}</div>}
 

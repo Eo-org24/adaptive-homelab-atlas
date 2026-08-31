@@ -42,6 +42,24 @@ function realizationEdges(data, includeStorage) {
 export const physicalGraph = (data) => ({ nodes: realizationNodes(data, true), edges: realizationEdges(data, true) });
 export const executionGraph = (data) => ({ nodes: realizationNodes(data, false), edges: realizationEdges(data, false) });
 
+// Placement-policy view: workload -> execution-provider "placement-allowed" edges
+// (from eligible_execution_providers), plus env -> node "hosts" for context. This is
+// eligibility only — it MUST NOT produce an "executes"/current-realization edge.
+export function placementGraph(data) {
+  const nodes = [];
+  (data.Node || []).forEach((n) => nodes.push(baseNode("node", n, "hostname", 0)));
+  (data.ExecutionEnvironment || []).forEach((e) => nodes.push(baseNode("env", e, "name", 1)));
+  (data.Workload || []).forEach((w) => nodes.push(baseNode("workload", w, "name", 2)));
+  const edges = [];
+  (data.ExecutionEnvironment || []).forEach((e) => { if (e.current_host) edges.push({ id: `host-${e.id}`, source: nid("node", e.current_host), target: nid("env", e.id), type: "hosts", provenance: normalizeSourceKind(e.source_kind) }); });
+  (data.Workload || []).forEach((w) => {
+    (w.eligible_execution_providers || []).forEach((eid) => {
+      edges.push({ id: `pallow-${w.id}-${eid}`, source: nid("workload", w.id), target: nid("env", eid), type: "placement-allowed", provenance: normalizeSourceKind(w.source_kind) });
+    });
+  });
+  return { nodes, edges };
+}
+
 export function storageGraph(data) {
   const nodes = [], edges = [];
   (data.Node || []).forEach((n) => nodes.push(baseNode("node", n, "hostname", 0)));
@@ -111,6 +129,7 @@ export function changeGraph(data, change) {
 export const MODES = [
   { key: "physical", label: "Physical Realization" },
   { key: "execution", label: "Execution Topology" },
+  { key: "placement", label: "Placement Policy" },
   { key: "dependency", label: "Workload Dependencies" },
   { key: "storage", label: "Storage Topology" },
   { key: "change", label: "Change Impact" },

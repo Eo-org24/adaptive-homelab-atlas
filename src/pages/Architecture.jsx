@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { useAllEntities } from "@/hooks/useEntities";
 import { PageHeader, Card } from "@/components/ui-bits";
 import ArchitectureGraph from "@/components/ArchitectureGraph";
-import { physicalGraph, executionGraph, dependencyGraph, storageGraph, changeGraph, MODES } from "@/lib/graph";
+import { physicalGraph, executionGraph, dependencyGraph, storageGraph, changeGraph, placementGraph, MODES } from "@/lib/graph";
 import { runHealthChecks } from "@/lib/healthEngine";
 import { normalizeSourceKind } from "@/lib/provenance";
 
@@ -27,6 +27,7 @@ export default function Architecture() {
   const rawGraph = useMemo(() => {
     if (mode === "physical") return physicalGraph(data);
     if (mode === "execution") return executionGraph(data);
+    if (mode === "placement") return placementGraph(data);
     if (mode === "dependency") return dependencyGraph(data);
     if (mode === "storage") return storageGraph(data);
     if (mode === "change") return change ? changeGraph(data, change) : { nodes: [], edges: [] };

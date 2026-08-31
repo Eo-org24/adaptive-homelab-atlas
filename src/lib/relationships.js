@@ -28,6 +28,7 @@ export const REF_FIELDS = [
   { entity: "Workload", field: "current_host", target: "Node" },
   { entity: "Workload", field: "preferred_node", target: "Node" },
   { entity: "Workload", field: "eligible_alternative_nodes", target: "Node", array: true },
+  { entity: "Workload", field: "eligible_execution_providers", target: "ExecutionEnvironment", array: true },
   { entity: "Decision", field: "supersedes", target: "Decision" },
   { entity: "Decision", field: "superseded_by", target: "Decision" },
   { entity: "Decision", field: "related_nodes", target: "Node", array: true },
@@ -131,6 +132,7 @@ export function findReferences(targetType, targetId, data) {
     if (w.current_host === targetId && targetType === "Node") push("Workload", w, "current_host");
     if (w.preferred_node === targetId && targetType === "Node") push("Workload", w, "preferred_node");
     if ((w.eligible_alternative_nodes || []).includes(targetId) && targetType === "Node") push("Workload", w, "eligible_alternative_nodes");
+    if ((w.eligible_execution_providers || []).includes(targetId) && targetType === "ExecutionEnvironment") push("Workload", w, "eligible_execution_providers");
   });
   (data.ExecutionEnvironment || []).forEach((e) => { if (e.current_host === targetId && targetType === "Node") push("ExecutionEnvironment", e, "current_host"); });
   (data.Dependency || []).forEach((d) => {

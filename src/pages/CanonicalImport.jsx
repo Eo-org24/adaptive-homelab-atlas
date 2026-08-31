@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useAllEntities } from "@/hooks/useEntities";
-import { validateEnvelope, previewImport, runImport, SAMPLE_ENVELOPE } from "@/lib/canonicalImport";
+import { validateEnvelope, previewImport, runImport, SAMPLE_ENVELOPE, GOLDEN_CROSSOVER } from "@/lib/canonicalImport";
 import { overrideConflicts } from "@/lib/provenance";
 import SyncStatusPanel from "@/components/SyncStatusPanel";
 import { PageHeader, Card } from "@/components/ui-bits";
@@ -62,6 +62,7 @@ export default function CanonicalImport() {
           <h3 className="text-sm font-medium">Canonical snapshot envelope</h3>
           <div className="flex items-center gap-2">
             <button onClick={() => setText(SAMPLE_ENVELOPE)} className="text-xs text-muted-foreground hover:text-foreground">Load sample</button>
+            <button onClick={() => setText(GOLDEN_CROSSOVER)} className="text-xs text-muted-foreground hover:text-foreground">Load golden crossover</button>
             <label className="text-xs flex items-center gap-1 cursor-pointer text-muted-foreground hover:text-foreground">
               <Upload className="w-3.5 h-3.5" /> Upload file
               <input type="file" accept=".json,application/json" className="hidden" onChange={onFile} />
@@ -98,6 +99,8 @@ export default function CanonicalImport() {
             <Count label="Unresolved" value={c.unresolved} tone="amber" icon={AlertTriangle} />
             <Count label="Conflicts" value={c.conflicts} tone="rose" icon={XCircle} />
             <Count label="Warnings" value={c.warnings} tone="amber" icon={AlertTriangle} />
+            <Count label="Relationships" value={c.relationships} tone="sky" icon={CheckCircle2} />
+            <Count label="Capability ambiguity" value={c.capability_findings} tone="amber" icon={AlertTriangle} />
           </div>
           <ReportSection title="Created" items={report.created} tone="emerald" render={(i) => `${i.entity}: ${i.canonical_id}`} />
           <ReportSection title="Updated" items={report.updated} tone="sky" render={(i) => `${i.entity}: ${i.canonical_id}`} />
@@ -106,6 +109,8 @@ export default function CanonicalImport() {
           <ReportSection title="Unresolved references" items={report.unresolved} tone="amber" render={(i) => `${i.entity} ${i.canonical_id}: ${i.field} → ${Array.isArray(i.refs) ? i.refs.join(", ") : i.ref} (${i.target || "external"})`} />
           <ReportSection title="Duplicate canonical IDs (conflicts)" items={report.conflicts} tone="rose" render={(i) => `${i.canonical_id} (first at ${i.first?.join(":")}, duplicate at ${i.duplicate?.join(":")})`} />
           <ReportSection title="Warnings" items={report.warnings} tone="amber" render={(i) => `${i.entity} ${i.canonical_id || ""}: ${i.field || ""} ${i.note || i.ref || ""}`} />
+          <ReportSection title="Relationships resolved" items={report.relationships} tone="sky" render={(i) => `${i.source} —${i.type}→ ${i.target}`} />
+          <ReportSection title="Capability resolution (preserved, not resolved)" items={report.capability_findings} tone="amber" render={(i) => `${i.canonical_id}: required ${i.type} instance "${i.instance}" — ${i.resolution} (${i.note})`} />
           {conflicts.length > 0 && (
             <div className="mt-3 border-t border-border pt-3">
               <div className="text-xs font-medium text-rose-500 mb-1">Local override conflicts ({conflicts.length})</div>

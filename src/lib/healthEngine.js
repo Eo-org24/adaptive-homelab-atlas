@@ -5,7 +5,7 @@
 // No AI prose: a finding exists only if it can be proven from current data; UNKNOWN where it cannot.
 
 import { detectCycles, fmtGB, nodeAllocations, nodeOversubscription, environmentUsage, environmentOversubscription, nodeStorageUsable } from "@/lib/homelab";
-import { readFieldProvenance, staleStatus, observationCategory, isSample, STALE_CONFIG } from "@/lib/provenance";
+import { readFieldProvenance, staleStatus, observationCategory, isSample, isFixture, STALE_CONFIG } from "@/lib/provenance";
 import { buildLookups, resolveRef, refFieldNames, DEP_TYPE_MAP } from "@/lib/relationships";
 
 const GEN_AT = new Date().toISOString();
@@ -43,9 +43,11 @@ export function runHealthChecks(data, options = {}) {
   // Provenance/identity/relationship/data-quality checks still run on the full set
   // (so sample-data presence is still flagged).
   const includeSample = options.includeSample === true;
-  const realNodes = includeSample ? nodes : nodes.filter((n) => !isSample(n));
-  const realWorkloads = includeSample ? workloads : workloads.filter((w) => !isSample(w));
-  const realEnvs = includeSample ? envs : envs.filter((e) => !isSample(e));
+  // Fixtures are NEVER real infrastructure (synthetic crossover data); samples are
+  // excludable but can be included on explicit operator request.
+  const realNodes = nodes.filter((n) => (includeSample || !isSample(n)) && !isFixture(n));
+  const realWorkloads = workloads.filter((w) => (includeSample || !isSample(w)) && !isFixture(w));
+  const realEnvs = envs.filter((e) => (includeSample || !isSample(e)) && !isFixture(e));
 
   const nodeIds = new Set(nodes.map((n) => n.id));
   const wlIds = new Set(workloads.map((w) => w.id));

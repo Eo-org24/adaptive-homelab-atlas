@@ -44,8 +44,11 @@ export default function Environments() {
         { label: "Persistent state", value: e.persistent_state ? "Yes" : "No" },
       ]} />
       {e.notes && <Section title="Notes"><p className="text-sm whitespace-pre-wrap">{e.notes}</p></Section>}
-      <Section title={`Workloads using this environment (${workloads.filter((w) => w.current_environment === e.id).length})`}>
-        <RelatedList items={workloads.filter((w) => w.current_environment === e.id)} route="/workloads" label={(w) => w.name} sub={(w) => (w.category || "").replace(/_/g, " ")} status={(w) => w.lifecycle} tone={(w) => lifecycleTone(w.lifecycle)} goTo={goTo} />
+      <Section title={`Current workloads (${workloads.filter((w) => w.current_environment === e.id).length})`}>
+        <RelatedList items={workloads.filter((w) => w.current_environment === e.id)} route="/workloads" label={(w) => w.name} sub={(w) => (w.category || "").replace(/_/g, " ")} status={(w) => w.lifecycle} tone={(w) => lifecycleTone(w.lifecycle)} goTo={goTo} emptyMsg="No current workloads" />
+      </Section>
+      <Section title={`Placement-eligible workloads (${workloads.filter((w) => (w.eligible_execution_providers || []).includes(e.id)).length})`}>
+        <RelatedList items={workloads.filter((w) => (w.eligible_execution_providers || []).includes(e.id))} route="/workloads" label={(w) => w.name} sub={(w) => (w.category || "").replace(/_/g, " ")} status={(w) => w.lifecycle} tone={(w) => lifecycleTone(w.lifecycle)} goTo={goTo} emptyMsg="None placement-eligible" />
       </Section>
       <Section title="Maintenance history">
         <MaintenanceList items={maintenance.filter((m) => m.target_id === e.id)} data={data} goTo={goTo} emptyMsg="No maintenance" />
