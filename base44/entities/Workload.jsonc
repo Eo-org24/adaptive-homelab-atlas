@@ -4,7 +4,19 @@
   "properties": {
     "name": {
       "type": "string",
-      "title": "Canonical name"
+      "title": "Display name (V1 display_name or canonical id fallback)"
+    },
+    "display_name": {
+      "type": "string",
+      "title": "Canonical display name (V1 display_name)"
+    },
+    "maturity": {
+      "type": "string",
+      "title": "Maturity (V1)"
+    },
+    "runtime_kind": {
+      "type": "string",
+      "title": "Runtime kind (V1 runtime.kind \u2014 preserved verbatim)"
     },
     "description": {
       "type": "string",
@@ -24,9 +36,10 @@
         "documentation",
         "development",
         "experimental",
-        "user_application"
+        "user_application",
+        "unknown"
       ],
-      "default": "user_application"
+      "default": "unknown"
     },
     "current_environment": {
       "type": "string",
@@ -38,18 +51,25 @@
     },
     "preferred_node": {
       "type": "string",
-      "title": "Preferred node (id)"
+      "title": "Preferred node (id) \u2014 Atlas-local, NOT canonical placement_allowed_on_node"
     },
     "eligible_alternative_nodes": {
       "type": "array",
-      "title": "Eligible alternative nodes",
+      "title": "Eligible alternative nodes (legacy Atlas-local)",
+      "items": {
+        "type": "string"
+      }
+    },
+    "placement_allowed_nodes": {
+      "type": "array",
+      "title": "Canonical placement-allowed nodes (V1 placement_allowed_on_node \u2014 NOT preferred, NOT current realization)",
       "items": {
         "type": "string"
       }
     },
     "eligible_execution_providers": {
       "type": "array",
-      "title": "Placement-eligible execution providers (ids) \u2014 NOT current realization",
+      "title": "Placement-eligible execution providers (ids) \u2014 V1 placement_allowed_on_provider \u2014 NOT current realization",
       "items": {
         "type": "string"
       }
@@ -95,7 +115,7 @@
     },
     "capability_requirements": {
       "type": "array",
-      "title": "Structured capability requirements",
+      "title": "Structured capability requirements (V1 requirements.capabilities)",
       "items": {
         "type": "object",
         "properties": {
@@ -211,7 +231,12 @@
     "imported_at": {
       "type": "string",
       "format": "date-time",
-      "title": "Imported at (value change)"
+      "title": "Imported at (Atlas import time)"
+    },
+    "source_generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Source artifact generated_at (producer)"
     },
     "last_seen_source_commit": {
       "type": "string",
@@ -220,7 +245,7 @@
     "last_seen_import_at": {
       "type": "string",
       "format": "date-time",
-      "title": "Last seen in canonical snapshot (import time)"
+      "title": "Last seen in canonical snapshot (Atlas import time)"
     },
     "external_id": {
       "type": "string",

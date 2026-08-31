@@ -9,7 +9,12 @@
     "last_import_at": {
       "type": "string",
       "format": "date-time",
-      "title": "Last canonical import"
+      "title": "Last canonical import (Atlas import time)"
+    },
+    "source_generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Source artifact generated_at (producer)"
     },
     "source_commit": {
       "type": "string",
@@ -17,7 +22,11 @@
     },
     "schema_version": {
       "type": "string",
-      "title": "Source schema version"
+      "title": "Source schema version (adaptive-homelab-atlas/v1)"
+    },
+    "producer_version": {
+      "type": "string",
+      "title": "Producer software version"
     },
     "imported_count": {
       "type": "number",
@@ -42,6 +51,8 @@
         "synchronized",
         "local_additions",
         "import_warnings",
+        "import_blocked",
+        "partial_failure",
         "stale"
       ],
       "default": "never_imported"

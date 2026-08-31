@@ -4,11 +4,11 @@
   "properties": {
     "name": {
       "type": "string",
-      "title": "Name"
+      "title": "Display name (canonical id fallback when V1 has no name)"
     },
     "type": {
       "type": "string",
-      "title": "Type",
+      "title": "Atlas internal type (V1 runtime.kind mapped; 'unknown' when not declared)",
       "enum": [
         "physical_host",
         "vm",
@@ -16,13 +16,29 @@
         "docker",
         "podman",
         "kubernetes",
-        "external_service"
+        "external_service",
+        "unknown"
       ],
-      "default": "vm"
+      "default": "unknown"
+    },
+    "runtime_kind": {
+      "type": "string",
+      "title": "Canonical runtime kind (V1 runtime.kind \u2014 preserved verbatim)"
+    },
+    "autostart": {
+      "type": "boolean",
+      "title": "Autostart (V1 runtime.autostart)"
+    },
+    "purpose": {
+      "type": "array",
+      "title": "Purpose declarations (V1)",
+      "items": {
+        "type": "string"
+      }
     },
     "current_host": {
       "type": "string",
-      "title": "Current host node (id)"
+      "title": "Current host node (id) \u2014 structural realization via hosted_on"
     },
     "cpu_allocation": {
       "type": "number",
@@ -72,6 +88,22 @@
         "type": "string"
       }
     },
+    "capabilities": {
+      "type": "array",
+      "title": "Capability declarations (V1)",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      }
+    },
     "canonical_id": {
       "type": "string",
       "title": "Canonical ID (e.g. execution-provider:tools1)"
@@ -104,7 +136,12 @@
     "imported_at": {
       "type": "string",
       "format": "date-time",
-      "title": "Imported at (value change)"
+      "title": "Imported at (Atlas import time)"
+    },
+    "source_generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Source artifact generated_at (producer)"
     },
     "last_seen_source_commit": {
       "type": "string",
@@ -113,7 +150,7 @@
     "last_seen_import_at": {
       "type": "string",
       "format": "date-time",
-      "title": "Last seen in canonical snapshot (import time)"
+      "title": "Last seen in canonical snapshot (Atlas import time)"
     },
     "field_provenance": {
       "type": "string",

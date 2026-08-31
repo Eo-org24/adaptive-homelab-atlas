@@ -4,7 +4,26 @@
   "properties": {
     "hostname": {
       "type": "string",
-      "title": "Canonical hostname"
+      "title": "Display hostname (canonical identity.physical_name or id fallback)"
+    },
+    "physical_name": {
+      "type": "string",
+      "title": "Canonical physical name (identity.physical_name from V1)"
+    },
+    "fqdn": {
+      "type": "string",
+      "title": "Fully qualified domain name (identity.fqdn from V1)"
+    },
+    "purpose": {
+      "type": "array",
+      "title": "Purpose declarations (V1)",
+      "items": {
+        "type": "string"
+      }
+    },
+    "memory_gib": {
+      "type": "number",
+      "title": "Canonical memory capacity (GiB \u2014 V1 resources.memory_gib)"
     },
     "description": {
       "type": "string",
@@ -37,7 +56,7 @@
     },
     "cpu_model": {
       "type": "string",
-      "title": "CPU model"
+      "title": "CPU model (V1 resources.cpu.model)"
     },
     "socket_count": {
       "type": "number",
@@ -54,7 +73,7 @@
     },
     "ram_capacity_gb": {
       "type": "number",
-      "title": "RAM capacity (GB)"
+      "title": "RAM capacity (GB \u2014 legacy Atlas-local; prefer memory_gib for canonical)"
     },
     "ram_configuration": {
       "type": "string",
@@ -81,7 +100,7 @@
     },
     "capabilities": {
       "type": "array",
-      "title": "Capability declarations",
+      "title": "Capability declarations (V1)",
       "items": {
         "type": "object",
         "properties": {
@@ -117,7 +136,7 @@
     },
     "lifecycle_state": {
       "type": "string",
-      "title": "Lifecycle state",
+      "title": "Lifecycle state (V1 lifecycle.state)",
       "enum": [
         "planned",
         "onboarding",
@@ -132,7 +151,7 @@
     },
     "availability_expectation": {
       "type": "string",
-      "title": "Availability expectation",
+      "title": "Availability expectation (V1 availability.expected)",
       "enum": [
         "always_on",
         "business_hours",
@@ -188,7 +207,12 @@
     "imported_at": {
       "type": "string",
       "format": "date-time",
-      "title": "Imported at (value change)"
+      "title": "Imported at (Atlas import time)"
+    },
+    "source_generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Source artifact generated_at (producer)"
     },
     "last_seen_source_commit": {
       "type": "string",
@@ -197,7 +221,7 @@
     "last_seen_import_at": {
       "type": "string",
       "format": "date-time",
-      "title": "Last seen in canonical snapshot (import time)"
+      "title": "Last seen in canonical snapshot (Atlas import time)"
     },
     "external_id": {
       "type": "string",
