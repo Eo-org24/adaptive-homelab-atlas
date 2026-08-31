@@ -39,6 +39,7 @@
 
 import { ENTITY_KINDS, buildCanonicalIndex, canonicalMatches } from "@/lib/relationships";
 import { readFieldProvenance } from "@/lib/provenance";
+import { validateV1Strict } from "@/lib/v1Schema";
 import {
   REPAIR_REF_DESC,
   REPAIRABLE_ENTITIES,
@@ -46,6 +47,30 @@ import {
   planOperationRemaps,
   applyOperationRemaps,
 } from "@/lib/repairRefs";
+
+// F4: Set equality for verifying array remap persistence.
+function setEquals(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b)) return false;
+  if (a.length !== b.length) return false;
+  const sa = new Set(a), sb = new Set(b);
+  if (sa.size !== sb.size) return false;
+  for (const v of sa) if (!sb.has(v)) return false;
+  return true;
+}
+
+// F2: Parse content_digest from source_note provenance metadata.
+function parseContentDigest(sourceNote) {
+  if (!sourceNote || typeof sourceNote !== "string") return null;
+  const match = sourceNote.match(/content_digest=(sha256:[a-f0-9]{64})/i);
+  return match ? match[1] : null;
+}
+
+// F5: Stable artifact preview key for binding preview to the current artifact.
+export function artifactPreviewKey(envelope) {
+  if (!envelope || !envelope.source) return "";
+  const src = envelope.source;
+  return [envelope.schema_version || "", src.repository || "", src.commit || "", src.content_digest || ""].join("|");
+}
 
 const KIND_TO_ENTITY = {
   node: "Node",
@@ -109,7 +134,10 @@ function normalizeFieldProvenance(rec) {
   return keys.map((k) => `${k}:${JSON.stringify(fp[k])}`).join("|");
 }
 
-function checkGroupEligibility(members, expectedCommit, expectedRepo, entity) {
+function checkGroupEligibility(members, expectedCommit, expectedRepo, entity, artifactProvenance) {
+  const expectedGeneratedAt = artifactProvenance ? artifactProvenance.generatedAt : "";
+  const expectedDigest = artifactProvenance ? artifactProvenance.contentDigest : "";
+
   for (const m of members) {
     if (m.source_kind !== "canonical")
       return { eligible: false, reason: `member ${m.id} has source_kind="${m.source_kind}" (not canonical)` };
@@ -117,6 +145,15 @@ function checkGroupEligibility(members, expectedCommit, expectedRepo, entity) {
       return { eligible: false, reason: `member ${m.id} has source_repository="${m.source_repository}" (expected "${expectedRepo}")` };
     if (m.source_commit !== expectedCommit)
       return { eligible: false, reason: `member ${m.id} has source_commit="${m.source_commit}" (expected "${expectedCommit}")` };
+
+    // F2: Verify source_generated_at matches the loaded artifact (when present in stored record)
+    if (m.source_generated_at && expectedGeneratedAt && m.source_generated_at !== expectedGeneratedAt)
+      return { eligible: false, reason: `member ${m.id} has source_generated_at="${m.source_generated_at}" (expected "${expectedGeneratedAt}")` };
+
+    // F2: Verify content_digest from source_note matches the loaded artifact
+    const storedDigest = parseContentDigest(m.source_note);
+    if (storedDigest && expectedDigest && storedDigest !== expectedDigest)
+      return { eligible: false, reason: `member ${m.id} has content_digest="${storedDigest}" (expected "${expectedDigest}")` };
 
     // Check for Atlas-local overrides (field_provenance with local layer)
     const fp = readFieldProvenance(m);
@@ -201,8 +238,11 @@ function planGlobalReferenceRemaps(deleteIdToKeeper, deleteIdToEntity, liveData)
           continue;
         }
         if (!REPAIRABLE_ENTITIES.has(target)) continue; // not a repairable entity — skip
-        // Verify the deleted ID belongs to the expected entity kind
-        if (deleteIdToEntity.get(val) !== target) continue; // ID belongs to a different entity — skip
+        // F3: Type mismatch — candidate-deleted ID whose entity kind conflicts with declared target → BLOCK
+        if (deleteIdToEntity.get(val) !== target) {
+          unsafeRefs.push({ deletedId: val, reason: `type mismatch: ${desc.entity}.${desc.field} expects ${target} but deleted ID belongs to ${deleteIdToEntity.get(val)}` });
+          continue;
+        }
         remaps.push({ entity: desc.entity, id: rec.id, field: desc.field, oldValue: val, newValue: deleteIdToKeeper.get(val) });
       }
     }
@@ -230,12 +270,26 @@ function planGlobalReferenceRemaps(deleteIdToKeeper, deleteIdToEntity, liveData)
 }
 
 // Preview: detect groups, check eligibility, select keepers, plan remaps. No writes.
+// F2: Strictly validate the artifact before considering repair eligibility.
 export function previewRepair(envelope, liveData) {
+  // F2: Strict V1 validation — same boundary as normal canonical import
+  const validation = validateV1Strict(envelope);
+  if (!validation.valid) {
+    return {
+      groups: [], ready: [], blocked: [], remaps: [],
+      validationErrors: validation.errors,
+    };
+  }
+
   const eligibleCids = artifactCanonicalIds(envelope);
   const index = buildCanonicalIndex(liveData);
   const src = envelope.source || {};
   const expectedRepo = src.repository || "";
   const expectedCommit = src.commit || "";
+  const artifactProvenance = {
+    generatedAt: envelope.generated_at || "",
+    contentDigest: (envelope.source && envelope.source.content_digest) || "",
+  };
 
   const groups = [];
 
@@ -248,7 +302,7 @@ export function previewRepair(envelope, liveData) {
     const matches = canonicalMatches(entity, cid, index);
     if (matches.length <= 1) return; // no duplicates
 
-    const eligibility = checkGroupEligibility(matches, expectedCommit, expectedRepo, entity);
+    const eligibility = checkGroupEligibility(matches, expectedCommit, expectedRepo, entity, artifactProvenance);
 
     if (!eligibility.eligible) {
       groups.push({
@@ -331,7 +385,18 @@ export async function runRepair(envelope, options = {}) {
     deleted: [], remapped: [],
     failedOperation: null,
     databaseStateUncertain: false,
+    writesOccurred: false,
   };
+
+  // F2: Strictly validate the artifact before execution — same boundary as preview
+  const validation = validateV1Strict(envelope);
+  if (!validation.valid) {
+    return {
+      ...report, blocked: true,
+      blockedReason: `artifact validation failed: ${validation.errors.join("; ")}`,
+      validationErrors: validation.errors,
+    };
+  }
 
   // Phase 0: Fresh read (execution revalidates independently of preview)
   let liveData;
@@ -358,7 +423,10 @@ export async function runRepair(envelope, options = {}) {
     };
   }
 
-  // Phase 2: Apply reference remaps (before any deletion)
+  // F4: Apply reference remaps one persisted record at a time with explicit
+  // success tracking. Do not assume bulkUpdate is atomic. Correctness > batching
+  // for rare repair. If an update fails, stop before deletion, fresh-read to
+  // verify which intended remaps actually persisted, and report the real outcome.
   report.phase = "remap";
   const remapsByEntity = {};
   preview.remaps.forEach((r) => {
@@ -368,28 +436,48 @@ export async function runRepair(envelope, options = {}) {
     remapsByEntity[r.entity].set(r.id, m);
   });
 
+  const intendedRemaps = [];
   for (const entity of Object.keys(remapsByEntity)) {
-    const updates = Array.from(remapsByEntity[entity].values());
-    if (updates.length === 0) continue;
+    Array.from(remapsByEntity[entity].values()).forEach((u) => {
+      const { id, ...payload } = u;
+      intendedRemaps.push({ entity, id, payload });
+    });
+  }
+
+  const attemptedRemaps = []; // { entity, id, fields, intendedValues }
+  for (const intended of intendedRemaps) {
+    const { entity, id, payload } = intended;
     try {
-      await adapter.bulkUpdate(entity, updates);
-      updates.forEach((u) =>
-        report.remapped.push({
-          entity, id: u.id,
-          fields: Object.keys(u).filter((k) => k !== "id"),
-        })
-      );
+      await adapter.update(entity, id, payload);
+      report.writesOccurred = true;
+      attemptedRemaps.push({ entity, id, fields: Object.keys(payload), intendedValues: payload });
     } catch (e) {
-      // C4: Some remaps may have succeeded, this one failed
+      // F4: An update failed — stop before deletion. Fresh-read to verify state.
       report.partial = true;
       report.recoveryRequired = true;
-      report.failedOperation = { phase: "remap", operation: `bulkUpdate ${entity}`, reason: e.message };
-      // Attempt fresh read to reconcile
-      try { await freshRead(adapter); }
-      catch (e2) { report.databaseStateUncertain = true; }
+      report.failedOperation = { phase: "remap", operation: `update ${entity} ${id}`, reason: e.message };
+      try {
+        const verifyData = await freshRead(adapter);
+        // Reconcile: verify each attempted remap against actual persisted state
+        report.remapped = attemptedRemaps.filter((r) => {
+          const rec = (verifyData[r.entity] || []).find((x) => x.id === r.id);
+          if (!rec) return false;
+          for (const [field, val] of Object.entries(r.intendedValues)) {
+            if (Array.isArray(val)) { if (!setEquals(rec[field] || [], val)) return false; }
+            else { if (rec[field] !== val) return false; }
+          }
+          return true;
+        }).map(({ entity, id, fields }) => ({ entity, id, fields }));
+      } catch (e2) {
+        report.databaseStateUncertain = true;
+        report.remapped = attemptedRemaps.map(({ entity, id, fields }) => ({ entity, id, fields }));
+      }
       return report;
     }
   }
+
+  // All remaps succeeded — copy verified remaps to report
+  report.remapped = attemptedRemaps.map(({ entity, id, fields }) => ({ entity, id, fields }));
 
   // Phase 3: Delete duplicate records (only verified eligible groups)
   report.phase = "delete";

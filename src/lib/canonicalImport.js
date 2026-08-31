@@ -282,8 +282,39 @@ export function preflightImport(envelope, data, options = {}) {
   if (plan.inputErrors.length) reasons.push("malformed records (strict V1 validation failed)");
   if (plan.conflicts.length) reasons.push("duplicate canonical IDs in incoming snapshot");
   if (plan.ambiguous.length) reasons.push("ambiguous existing canonical identity");
+
+  // F1: Detect ambiguous existing canonical dependency identity and ambiguous
+  // relationship endpoint identity. These must BLOCK before writes — never
+  // silently choose a keeper or use buildLookups() last-wins resolution.
+  const plannedCids = new Set(plan.plans.map((p) => p.canonical_id));
+  if (plan.format === "unified") {
+    const depKeyIndex = buildDependencyKeyIndex(data);
+    let ambiguousDeps = 0;
+    let ambiguousEndpoints = 0;
+    plan.relationships.forEach((r) => {
+      const s = parseTypedId(r.source), t = parseTypedId(r.target);
+      if (!s || !t) return;
+      // depends_on: check for multiple existing canonical Dependencies with same key
+      if (r.type === "depends_on") {
+        const relKey = dependencyRelationshipKey(r.source, r.target);
+        const existing = depKeyIndex.get(relKey) || [];
+        if (existing.length > 1) ambiguousDeps++;
+      }
+      // Endpoints: if not being created in this import, check for multiple existing matches
+      if (!plannedCids.has(r.source)) {
+        const srcEntity = KIND_TO_ENTITY[s.kind];
+        if (srcEntity && canonicalMatches(srcEntity, r.source, plan.index).length > 1) ambiguousEndpoints++;
+      }
+      if (!plannedCids.has(r.target)) {
+        const tgtEntity = KIND_TO_ENTITY[t.kind];
+        if (tgtEntity && canonicalMatches(tgtEntity, r.target, plan.index).length > 1) ambiguousEndpoints++;
+      }
+    });
+    if (ambiguousDeps > 0) reasons.push("ambiguous existing canonical dependency identity");
+    if (ambiguousEndpoints > 0) reasons.push("ambiguous existing relationship endpoint identity");
+  }
+
   if (!allowPartialRefs) {
-    const plannedCids = new Set(plan.plans.map((p) => p.canonical_id));
     let unresolved = 0;
     if (plan.format === "unified") {
       plan.relationships.forEach((r) => {
@@ -448,6 +479,36 @@ function resolveRelationshipFields(item, lookups, report, allowPartialRefs) {
 // Build a deterministic relationship key for V1 depends_on tuples.
 function dependencyRelationshipKey(source, target) {
   return `${source}|depends_on|${target}`;
+}
+
+// F1: Build a dependency key index: relationship_key -> [Dependency records].
+// Used to detect MULTIPLE existing canonical Dependencies sharing the same
+// deterministic identity. Normal import must BLOCK on ambiguous dependency
+// identity — never silently choose a keeper.
+function buildDependencyKeyIndex(data) {
+  const byKey = new Map();
+  (data.Dependency || []).forEach((d) => {
+    if (d.source_kind === "canonical" && d.relationship_key) {
+      if (!byKey.has(d.relationship_key)) byKey.set(d.relationship_key, []);
+      byKey.get(d.relationship_key).push(d);
+    }
+  });
+  return byKey;
+}
+
+// F7: Canonical-owned array fields compared by set semantics, not order.
+const CANONICAL_ARRAY_FIELDS = new Set([
+  "Workload.eligible_execution_providers",
+  "Workload.placement_allowed_nodes",
+]);
+
+function setEquals(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b)) return false;
+  if (a.length !== b.length) return false;
+  const sa = new Set(a), sb = new Set(b);
+  if (sa.size !== sb.size) return false;
+  for (const v of sa) if (!sb.has(v)) return false;
+  return true;
 }
 
 // Apply V1 unified relationships. Returns { updatesByEntity, dependenciesToUpsert, staleDependencyKeys }.
@@ -721,7 +782,13 @@ export async function runImport(envelope, data, options = {}) {
         for (const [field, newVal] of Object.entries(u)) {
           if (field === "id") continue;
           const oldVal = existing[field];
-          if (JSON.stringify(oldVal) !== JSON.stringify(newVal)) { relChanged = true; break; }
+          // F7: Canonical-owned array fields compared by set semantics —
+          // a tuple ordering change alone must NOT count as a value change.
+          if (CANONICAL_ARRAY_FIELDS.has(`${entity}.${field}`)) {
+            if (!setEquals(oldVal || [], newVal || [])) { relChanged = true; break; }
+          } else {
+            if (JSON.stringify(oldVal) !== JSON.stringify(newVal)) { relChanged = true; break; }
+          }
         }
         if (relChanged) {
           return { ...u, source_commit: meta.source_commit, imported_at: meta.imported_at, last_seen_source_commit: meta.source_commit, last_seen_import_at: meta.imported_at };

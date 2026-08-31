@@ -379,27 +379,27 @@ describe("C3: Tightened semantic eligibility", () => {
 
 // ---- C4: HONEST PARTIAL REPAIR FAILURE ----
 describe("C4: Honest partial repair failure", () => {
-  it("first remap batch succeeds, second fails → partial with successful remaps reported", async () => {
+  it("first remap update succeeds, second fails → partial with successful remaps verified against persisted state", async () => {
     const adapter = createMemoryAdapter();
     await runImport(ARTIFACT, {}, { adapter, complete: true });
 
-    // Create duplicates for a node and an execution provider (different entities → different bulkUpdate batches)
+    // Create duplicates for a node and an execution provider (different entities → different update calls)
     const pve7 = Array.from(adapter._store.Node.values()).find((r) => r.canonical_id === "node:pve7");
     const tools1 = Array.from(adapter._store.ExecutionEnvironment.values()).find((r) => r.canonical_id === "execution-provider:tools1");
     const { id: pve7Dup } = await adapter.create("Node", { ...pve7, id: undefined, created_date: undefined, updated_date: undefined, created_by_id: undefined });
     const { id: tools1Dup } = await adapter.create("ExecutionEnvironment", { ...tools1, id: undefined, created_date: undefined, updated_date: undefined, created_by_id: undefined });
 
-    // Create references in DIFFERENT entities so they produce separate bulkUpdate calls
+    // Create references in DIFFERENT entities so they produce separate update calls
     const dec = await adapter.create("Decision", { decision_id: "d1", title: "t1", related_nodes: [pve7Dup] });
     const wl = await adapter.create("Workload", { name: "test-wl", category: "unknown", eligible_execution_providers: [tools1Dup] });
 
-    // Override bulkUpdate to fail on the second call
-    const origBulkUpdate = adapter.bulkUpdate.bind(adapter);
-    let bulkUpdateCount = 0;
-    adapter.bulkUpdate = async (entity, updates) => {
-      bulkUpdateCount++;
-      if (bulkUpdateCount === 2) throw new Error("Simulated remap failure");
-      return origBulkUpdate(entity, updates);
+    // F4: Override update to fail on the second call (one-at-a-time remaps)
+    const origUpdate = adapter.update.bind(adapter);
+    let updateCount = 0;
+    adapter.update = async (entity, id, payload) => {
+      updateCount++;
+      if (updateCount === 2) throw new Error("Simulated remap failure");
+      return origUpdate(entity, id, payload);
     };
 
     const r = await runRepair(ARTIFACT, { adapter });
@@ -407,8 +407,21 @@ describe("C4: Honest partial repair failure", () => {
     expect(r.recoveryRequired).toBe(true);
     expect(r.failedOperation).toBeTruthy();
     expect(r.failedOperation.phase).toBe("remap");
-    // Some remaps succeeded (the first batch)
+    // F4: The first update succeeded and is verified against actual persisted state
     expect(r.remapped.length).toBeGreaterThan(0);
+    // F4: writesOccurred is true — at least one write happened
+    expect(r.writesOccurred).toBe(true);
+    // F4: Verify the reported remap actually matches persisted state
+    const remappedRec = (adapter._store[r.remapped[0].entity] || new Map()).get(r.remapped[0].id);
+    expect(remappedRec).toBeTruthy();
+    // The remapped field should contain the keeper ID, not the deleted ID
+    const field = r.remapped[0].fields[0];
+    const allDeleted = new Set([pve7Dup, tools1Dup]);
+    if (Array.isArray(remappedRec[field])) {
+      remappedRec[field].forEach((v) => expect(allDeleted.has(v)).toBe(false));
+    } else {
+      expect(allDeleted.has(remappedRec[field])).toBe(false);
+    }
   });
 
   it("first delete succeeds, later delete fails → partial with successful deletes reported", async () => {

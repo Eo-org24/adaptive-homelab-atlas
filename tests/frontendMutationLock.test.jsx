@@ -34,6 +34,7 @@ vi.mock("@/lib/duplicateRepair", () => ({
   runRepair: mockRunRepair,
   selectKeeper: () => ({ id: "keeper-1", created_date: "2026-01-01T00:00:00Z" }),
   artifactCanonicalIds: () => new Set(),
+  artifactPreviewKey: () => "mock-key",
 }));
 
 // ---- Imports ----

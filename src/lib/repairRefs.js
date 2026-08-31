@@ -95,48 +95,70 @@ export function resolveRefTarget(desc, rec) {
 // is found (which should block the group).
 //
 // Each returned descriptor: { opIndex, field, target, oldValue, newValue }
+// F3: Recursively scan a value for strings exactly matching a deleted internal ID.
+// Used to detect candidate-deleted IDs in unknown structured operation fields.
+function scanForDeletedIds(value, deletedIds) {
+  if (value == null) return false;
+  if (typeof value === "string") return deletedIds.has(value);
+  if (Array.isArray(value)) return value.some((v) => scanForDeletedIds(v, deletedIds));
+  if (typeof value === "object") return Object.values(value).some((v) => scanForDeletedIds(v, deletedIds));
+  return false;
+}
+
 export function planOperationRemaps(operations, deleteIdToKeeper, deleteIdToEntity) {
   const remaps = [];
   if (!Array.isArray(operations)) return remaps;
+
+  const deletedIds = new Set(deleteIdToKeeper.keys());
+  // Known fields (ID fields + their type fields) — not scanned for unknown deleted IDs
+  const knownFields = new Set(OPERATION_ID_FIELDS.map((f) => f.field));
+  OPERATION_ID_FIELDS.forEach((f) => { if (f.typeField) knownFields.add(f.typeField); });
 
   for (let i = 0; i < operations.length; i++) {
     const op = operations[i];
     if (!op || typeof op !== "object") continue;
 
+    // First pass: handle known ID fields
     for (const desc of OPERATION_ID_FIELDS) {
       const val = op[desc.field];
       if (val == null || val === "") continue;
 
       if (desc.resolve === "direct") {
-        if (!desc.target) continue; // safety: no target defined
+        if (!desc.target) continue;
         if (!REPAIRABLE_ENTITIES.has(desc.target)) continue;
-        if (deleteIdToEntity.has(val) && deleteIdToEntity.get(val) === desc.target) {
-          if (!deleteIdToKeeper.has(val)) {
-            // ID is scheduled for deletion but no keeper mapping — unsafe
-            return null;
-          }
+        if (deleteIdToEntity.has(val)) {
+          // F3: Type mismatch — candidate-deleted ID whose entity kind conflicts with declared target → BLOCK
+          if (deleteIdToEntity.get(val) !== desc.target) return null;
+          if (!deleteIdToKeeper.has(val)) return null;
           remaps.push({ opIndex: i, field: desc.field, target: desc.target, oldValue: val, newValue: deleteIdToKeeper.get(val) });
         }
       } else if (desc.resolve === "typed") {
-        // object_id with object_type determining the target
         const typeVal = op[desc.typeField];
         if (!typeVal) {
-          // object_id present but object_type missing — cannot determine safely
           if (deleteIdToEntity.has(val)) return null;
           continue;
         }
         const target = TYPE_FIELD_TO_ENTITY[desc.typeField] ? TYPE_FIELD_TO_ENTITY[desc.typeField](typeVal) : null;
         if (!target) {
-          // Unknown object_type — if the value is a deleted ID, we cannot safely remap
           if (deleteIdToEntity.has(val)) return null;
           continue;
         }
         if (!REPAIRABLE_ENTITIES.has(target)) continue;
-        if (deleteIdToEntity.has(val) && deleteIdToEntity.get(val) === target) {
+        if (deleteIdToEntity.has(val)) {
+          // F3: Type mismatch — candidate-deleted ID whose entity kind conflicts with declared type → BLOCK
+          if (deleteIdToEntity.get(val) !== target) return null;
           if (!deleteIdToKeeper.has(val)) return null;
           remaps.push({ opIndex: i, field: desc.field, target, oldValue: val, newValue: deleteIdToKeeper.get(val) });
         }
       }
+    }
+
+    // F3: Second pass — scan remaining unknown structured fields conservatively.
+    // If any unknown field/value contains a string exactly equal to an internal ID
+    // scheduled for deletion, block the group (fail closed). Handle nested arrays/objects.
+    for (const key of Object.keys(op)) {
+      if (knownFields.has(key)) continue;
+      if (scanForDeletedIds(op[key], deletedIds)) return null;
     }
   }
 

@@ -5,7 +5,7 @@ import { overrideConflicts } from "@/lib/provenance";
 import SyncStatusPanel from "@/components/SyncStatusPanel";
 import DuplicateRepair from "@/components/DuplicateRepair";
 import { PageHeader, Card } from "@/components/ui-bits";
-import { Upload, Play, FileWarning, CheckCircle2, AlertTriangle, XCircle, Loader2, Database } from "lucide-react";
+import { Upload, Play, FileWarning, CheckCircle2, AlertTriangle, XCircle, Loader2, Database, RefreshCw } from "lucide-react";
 
 const LOAD = ["Node", "ExecutionEnvironment", "Workload", "Decision", "Dependency", "StorageDevice", "NetworkDevice", "StoragePool", "SwitchPort", "Task", "Maintenance", "PlannedChange"];
 
@@ -35,6 +35,7 @@ export default function CanonicalImport() {
   const [conflicts, setConflicts] = useState([]);
   const [phase, setPhase] = useState(""); // "preview" | "imported"
   const [parsedEnv, setParsedEnv] = useState(null);
+  const [refreshError, setRefreshError] = useState("");
   // C5: One shared synchronous mutation lock for normal import AND repair.
   // Acquired synchronously before the first await; released in finally.
   const busyRef = useRef(false);
@@ -49,7 +50,7 @@ export default function CanonicalImport() {
     setBusy(false);
   }, []);
 
-  const clearStale = () => { setReport(null); setError(""); setConflicts([]); setPhase(""); setParsedEnv(null); };
+  const clearStale = () => { setReport(null); setError(""); setConflicts([]); setPhase(""); setParsedEnv(null); setRefreshError(""); };
   const loadText = (t) => { setText(t); clearStale(); };
 
   const parse = () => {
@@ -73,13 +74,18 @@ export default function CanonicalImport() {
     if (busyRef.current || busy || loading || incomplete) return;
     const env = parse(); if (!env) return;
     if (!acquireLock()) return;
-    setPhase("");
+    setPhase(""); setRefreshError("");
     try {
       const r = await runImport(env, data, { complete });
       setReport(r); setPhase("imported"); setConflicts(overrideConflicts(env, data));
-      // Refresh the page dataset after any non-blocked import that may have written.
+      // F8: Separate mutation from page-dataset refresh. If the mutation succeeded
+      // but the refresh fails, show a distinct warning — do NOT label it "Import failed".
       if (!r.blocked) {
-        await refresh();
+        try {
+          await refresh();
+        } catch (e) {
+          setRefreshError(`Page dataset refresh failed: ${e.message}. The import itself succeeded — please reload the page to see updated data.`);
+        }
       }
     } catch (e) {
       setError(`Import failed: ${e.message}`);
@@ -167,6 +173,12 @@ export default function CanonicalImport() {
           </div>
         )}
         {error && <div className="mt-3 rounded-md bg-rose-500/10 border border-rose-500/30 px-3 py-2 text-xs text-rose-600 dark:text-rose-400">{error}</div>}
+        {refreshError && (
+          <div className="mt-3 rounded-md bg-amber-500/10 border border-amber-500/30 px-3 py-2 text-xs text-amber-600 dark:text-amber-400 flex items-start gap-1.5">
+            <RefreshCw className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+            <span>{refreshError}</span>
+          </div>
+        )}
       </Card>
 
       {report && (

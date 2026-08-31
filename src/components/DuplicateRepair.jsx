@@ -1,8 +1,8 @@
-import React, { useState } from "react";
-import { previewRepair, runRepair } from "@/lib/duplicateRepair";
+import React, { useState, useEffect } from "react";
+import { previewRepair, runRepair, artifactPreviewKey } from "@/lib/duplicateRepair";
 import { runImport, createBase44Adapter } from "@/lib/canonicalImport";
 import { Card } from "@/components/ui-bits";
-import { Wrench, Play, AlertTriangle, CheckCircle2, XCircle, Loader2, ArrowRight, AlertCircle } from "lucide-react";
+import { Wrench, Play, AlertTriangle, CheckCircle2, XCircle, Loader2, ArrowRight, AlertCircle, RefreshCw } from "lucide-react";
 
 // Operator-initiated duplicate-repair panel.
 // C5: Uses the PARENT's shared mutation lock — no independent mutation authority.
@@ -13,12 +13,30 @@ export default function DuplicateRepair({ envelope, data, complete, disabled, bu
   const [preview, setPreview] = useState(null);
   const [report, setReport] = useState(null);
   const [error, setError] = useState("");
+  const [refreshError, setRefreshError] = useState("");
+  // F5: Track the artifact key that the current preview/report is bound to.
+  const [previewKey, setPreviewKey] = useState("");
+  const currentKey = envelope ? artifactPreviewKey(envelope) : "";
+
+  // F5: When the artifact changes, clear old preview and report.
+  // The new artifact requires its own dry-run preview before Execute Repair.
+  useEffect(() => {
+    if (previewKey && previewKey !== currentKey) {
+      setPreview(null);
+      setReport(null);
+      setError("");
+      setRefreshError("");
+    }
+  }, [currentKey, previewKey]);
 
   const onPreview = () => {
     if (!envelope || busy || disabled) return;
-    setError(""); setReport(null);
+    setError(""); setReport(null); setRefreshError("");
     try {
-      setPreview(previewRepair(envelope, data));
+      const p = previewRepair(envelope, data);
+      setPreview(p);
+      // F5: Bind preview to the current artifact key
+      setPreviewKey(currentKey);
     } catch (e) {
       setError(`Repair preview failed: ${e.message}`);
     }
@@ -26,9 +44,11 @@ export default function DuplicateRepair({ envelope, data, complete, disabled, bu
 
   const onExecute = async () => {
     if (!envelope || busy || disabled) return;
+    // F5: Verify preview key corresponds to the current artifact
+    if (previewKey !== currentKey) return;
     // C5: Acquire the shared lock synchronously before the first await
     if (!acquireLock()) return;
-    setError(""); setReport(null);
+    setError(""); setReport(null); setRefreshError("");
     try {
       const adapter = createBase44Adapter();
       const r = await runRepair(envelope, { adapter });
@@ -49,10 +69,16 @@ export default function DuplicateRepair({ envelope, data, complete, disabled, bu
       }
 
       setReport(r);
-      // C4: Always refresh parent dataset after ANY repair attempt that may have written
-      // (partial or complete). Blocked repairs with no writes don't need refresh.
+      // F8: Separate mutation from page-dataset refresh. If the mutation succeeded
+      // but the refresh fails, show a distinct warning — do NOT label it "Repair failed".
       if (!r.blocked || r.remapped.length > 0 || r.deleted.length > 0) {
-        if (onAfterRepair) await onAfterRepair();
+        if (onAfterRepair) {
+          try {
+            await onAfterRepair();
+          } catch (e) {
+            setRefreshError(`Page dataset refresh failed: ${e.message}. The repair itself succeeded — please reload the page to see updated data.`);
+          }
+        }
       }
     } catch (e) {
       setError(`Repair failed: ${e.message}`);
@@ -64,7 +90,8 @@ export default function DuplicateRepair({ envelope, data, complete, disabled, bu
 
   if (!envelope) return null;
 
-  const hasEligible = preview && preview.ready && preview.ready.length > 0;
+  // F5: hasEligible requires the preview to be bound to the current artifact key
+  const hasEligible = preview && preview.ready && preview.ready.length > 0 && previewKey === currentKey;
   const isPartial = report && (report.partial || report.recoveryRequired);
   const isComplete = report && !report.blocked && !report.partial && !report.recoveryRequired;
 
@@ -99,6 +126,15 @@ export default function DuplicateRepair({ envelope, data, complete, disabled, bu
       {error && (
         <div className="mt-3 rounded-md bg-rose-500/10 border border-rose-500/30 px-3 py-2 text-xs text-rose-600 dark:text-rose-400">
           {error}
+        </div>
+      )}
+
+      {preview && preview.validationErrors && (
+        <div className="mt-3 rounded-md bg-rose-500/10 border border-rose-500/30 px-3 py-2 text-xs text-rose-600 dark:text-rose-400">
+          <span className="font-medium">Artifact validation failed:</span>
+          <ul className="mt-1 space-y-0.5">
+            {preview.validationErrors.slice(0, 5).map((e, i) => <li key={i}>· {e}</li>)}
+          </ul>
         </div>
       )}
 
@@ -224,16 +260,24 @@ export default function DuplicateRepair({ envelope, data, complete, disabled, bu
             </div>
           )}
 
-          {/* C4: Re-import result */}
+          {/* F6: Re-import result — use counts.ambiguous (not conflicts) for remaining duplicate identities */}
           {report.reimport && (
             <div className="text-xs text-muted-foreground">
               Post-repair import: created={report.reimport.counts?.created || 0}, updated={report.reimport.counts?.updated || 0},
-              unchanged={report.reimport.counts?.unchanged || 0}, duplicates={report.reimport.counts?.conflicts || 0}
+              unchanged={report.reimport.counts?.unchanged || 0}, ambiguous identities={report.reimport.counts?.ambiguous || 0}
             </div>
           )}
           {report.reimportError && (
             <div className="text-xs text-rose-500">
               Post-repair import failed: {report.reimportError}
+            </div>
+          )}
+
+          {/* F8: Separate page-dataset refresh failure from mutation failure */}
+          {refreshError && (
+            <div className="flex items-start gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+              <RefreshCw className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+              <span>{refreshError}</span>
             </div>
           )}
         </div>
