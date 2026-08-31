@@ -398,3 +398,67 @@ describe("V1 sync state model", () => {
     expect(r.sync_state).toBe("partial_failure");
   });
 });
+
+// ---- §20: OPTIONAL CAPABILITY INSTANCE SEMANTICS ----
+describe("V1 contract: optional capability instance semantics", () => {
+  it("type-only capability declaration is VALID", () => {
+    const artifact = { ...COMP, entities: COMP.entities.map((e) => e.kind === "node" ? { ...e, capabilities: [{ type: "hw-accel" }] } : e) };
+    const r = validateV1Strict(artifact);
+    expect(r.valid).toBe(true);
+  });
+  it("named capability declaration with id is VALID", () => {
+    const artifact = { ...COMP, entities: COMP.entities.map((e) => e.kind === "node" ? { ...e, capabilities: [{ type: "hw-accel", id: "accel1" }] } : e) };
+    const r = validateV1Strict(artifact);
+    expect(r.valid).toBe(true);
+  });
+  it("type-only workload requirement is VALID", () => {
+    const artifact = { ...COMP, entities: COMP.entities.map((e) => e.kind === "workload" && e.requirements ? { ...e, requirements: { capabilities: [{ type: "hw-accel" }] } } : e) };
+    const r = validateV1Strict(artifact);
+    expect(r.valid).toBe(true);
+  });
+  it("exact workload requirement with instance is VALID", () => {
+    const artifact = { ...COMP, entities: COMP.entities.map((e) => e.kind === "workload" && e.requirements ? { ...e, requirements: { capabilities: [{ type: "hw-accel", instance: "accel1" }] } } : e) };
+    const r = validateV1Strict(artifact);
+    expect(r.valid).toBe(true);
+  });
+  it("empty capability id is INVALID", () => {
+    const artifact = { ...COMP, entities: COMP.entities.map((e) => e.kind === "node" ? { ...e, capabilities: [{ type: "hw-accel", id: "" }] } : e) };
+    const r = validateV1Strict(artifact);
+    expect(r.valid).toBe(false);
+  });
+  it("empty requirement instance is INVALID", () => {
+    const artifact = { ...COMP, entities: COMP.entities.map((e) => e.kind === "workload" && e.requirements ? { ...e, requirements: { capabilities: [{ type: "hw-accel", instance: "" }] } } : e) };
+    const r = validateV1Strict(artifact);
+    expect(r.valid).toBe(false);
+  });
+  it("type-only requirement does NOT produce a named-instance ambiguity finding", () => {
+    const artifact = { ...COMP, entities: COMP.entities.map((e) => e.kind === "workload" && e.requirements ? { ...e, requirements: { capabilities: [{ type: "hw-accel" }] } } : e) };
+    const r = previewImport(artifact, {});
+    expect(r.capability_findings.length).toBe(0);
+  });
+  it("named-instance requirement DOES produce an ambiguity finding", () => {
+    const artifact = { ...COMP, entities: COMP.entities.map((e) => e.kind === "workload" && e.requirements ? { ...e, requirements: { capabilities: [{ type: "hw-accel", instance: "accel1" }] } } : e) };
+    const r = previewImport(artifact, {});
+    expect(r.capability_findings.length).toBeGreaterThanOrEqual(1);
+    expect(r.capability_findings[0].resolution).toBe("unresolved");
+  });
+});
+
+// ---- §21: REQUIRED CONTENT DIGEST ----
+describe("V1 contract: required source.content_digest", () => {
+  it("valid sha256 digest is VALID", () => {
+    expect(validateV1Strict(COMP).valid).toBe(true);
+  });
+  it("missing content_digest is INVALID", () => {
+    const bad = { ...COMP, source: { ...COMP.source, content_digest: undefined } };
+    const r = validateV1Strict(bad);
+    expect(r.valid).toBe(false);
+    expect(r.errors.some((e) => /content_digest/i.test(e))).toBe(true);
+  });
+  it("malformed digest is INVALID", () => {
+    const bad = { ...COMP, source: { ...COMP.source, content_digest: "not-a-digest" } };
+    const r = validateV1Strict(bad);
+    expect(r.valid).toBe(false);
+    expect(r.errors.some((e) => /content_digest/i.test(e))).toBe(true);
+  });
+});

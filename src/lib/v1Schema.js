@@ -8,16 +8,16 @@ const V1 = "adaptive-homelab-atlas/v1";
 // ---- Typed-id shape: <kind>:<id> ----
 const typedIdRegex = /^[a-z-]+:.+$/;
 
-// ---- Capability: exactly { type, id } — no open-ended properties ----
+// ---- Capability: { type (required), id (optional) } — no open-ended properties ----
 const capabilitySchema = z.object({
   type: z.string().min(1),
-  id: z.string().min(1),
+  id: z.string().min(1).optional(),
 }).strict();
 
-// ---- Capability requirement: exactly { type, instance } — no open-ended properties ----
+// ---- Capability requirement: { type (required), instance (optional) } — no open-ended properties ----
 const capabilityRequirementSchema = z.object({
   type: z.string().min(1),
-  instance: z.string().min(1),
+  instance: z.string().min(1).optional(),
 }).strict();
 
 // ---- Provenance: exactly { source_class: "canonical" } ----
@@ -118,7 +118,7 @@ const envelopeSchema = z.object({
     repository: z.string().min(1),
     commit: z.string(),
     is_dirty: z.boolean(),
-    content_digest: contentDigestSchema.optional(),
+    content_digest: contentDigestSchema,
   }).strict(),
   entities: z.array(z.discriminatedUnion("kind", [nodeSchema, providerSchema, workloadSchema])),
   relationships: z.array(relationshipSchema),
