@@ -8,9 +8,10 @@ const mockState = vi.hoisted(() => ({
 }));
 const mockSyncList = vi.hoisted(() => vi.fn().mockResolvedValue([]));
 const mockRunImport = vi.hoisted(() => vi.fn());
+const mockRefresh = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 
 vi.mock("@/hooks/useArchitectureDataset", () => ({
-  useArchitectureDataset: () => mockState,
+  useArchitectureDataset: () => ({ ...mockState, refresh: mockRefresh }),
 }));
 vi.mock("@/api/base44Client", () => ({
   base44: {
@@ -87,6 +88,8 @@ beforeEach(() => {
   mockRunImport.mockResolvedValue(makeReport({ sync_state: "synchronized" }));
   mockSyncList.mockReset();
   mockSyncList.mockResolvedValue([]);
+  mockRefresh.mockReset();
+  mockRefresh.mockResolvedValue(undefined);
   Object.assign(mockState, { data: {}, complete: true, errors: {}, incompleteEntities: [], loading: false });
 });
 
@@ -993,7 +996,38 @@ describe("§28: Busy guard release — finally guarantees unlock", () => {
   });
 });
 
-// ---- §29: NAVIGATION SMOKE (intentionally deferred) ----
+// ---- §29: POST-IMPORT DATASET REFRESH ----
+describe("§29: Post-import dataset refresh", () => {
+  it("refreshes the page dataset after a successful (non-blocked) import", async () => {
+    mockRunImport.mockResolvedValue(makeReport({ sync_state: "synchronized" }));
+    renderPage();
+    setTextarea(COMP_STR);
+    clickRun();
+    await waitFor(() => expect(screen.getByText("Import complete")).toBeInTheDocument());
+    expect(mockRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("refreshes the page dataset after a partial-failure import (writes may have occurred)", async () => {
+    mockRunImport.mockResolvedValue(makeReport({ sync_state: "partial_failure", partial: true }));
+    renderPage();
+    setTextarea(COMP_STR);
+    clickRun();
+    await waitFor(() => expect(screen.getByText(/PARTIAL IMPORT FAILURE/i)).toBeInTheDocument());
+    // Partial failure may have written some records — refresh still runs
+    expect(mockRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("does NOT refresh after a blocked import (no writes occurred)", async () => {
+    mockRunImport.mockResolvedValue(makeReport({ blocked: true, blockedReasons: ["ambiguous existing canonical identity"], sync_state: "import_blocked" }));
+    renderPage();
+    setTextarea(COMP_STR);
+    clickRun();
+    await waitFor(() => expect(screen.getByText(/Import blocked:/i)).toBeInTheDocument());
+    expect(mockRefresh).not.toHaveBeenCalled();
+  });
+});
+
+// ---- §30: NAVIGATION SMOKE (intentionally deferred) ----
 // Full post-import navigation smoke (Node/Environment/Workload detail pages with
 // shuffled canonical producer order) is intentionally deferred. The EntityCrudPage-
 // based detail views require MemoryRouter + per-entity useEntities/useAllEntities

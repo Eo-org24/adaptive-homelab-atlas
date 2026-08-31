@@ -1,8 +1,9 @@
 import React, { useState, useRef } from "react";
 import { useArchitectureDataset } from "@/hooks/useArchitectureDataset";
-import { validateEnvelope, previewImport, runImport, SAMPLE_ENVELOPE, GOLDEN_CROSSOVER, COMPREHENSIVE_V1_FIXTURE } from "@/lib/canonicalImport";
+import { validateEnvelope, previewImport, runImport, SAMPLE_ENVELOPE, GOLDEN_CROSSOVER, COMPREHENSIVE_V1_FIXTURE, REAL_CROSSOVER_ARTIFACT } from "@/lib/canonicalImport";
 import { overrideConflicts } from "@/lib/provenance";
 import SyncStatusPanel from "@/components/SyncStatusPanel";
+import DuplicateRepair from "@/components/DuplicateRepair";
 import { PageHeader, Card } from "@/components/ui-bits";
 import { Upload, Play, FileWarning, CheckCircle2, AlertTriangle, XCircle, Loader2, Database } from "lucide-react";
 
@@ -26,16 +27,17 @@ const STATUS_TONE = {
 };
 
 export default function CanonicalImport() {
-  const { data, complete, errors, incompleteEntities, loading } = useArchitectureDataset(LOAD);
+  const { data, complete, errors, incompleteEntities, loading, refresh } = useArchitectureDataset(LOAD);
   const [text, setText] = useState("");
   const [report, setReport] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [conflicts, setConflicts] = useState([]);
   const [phase, setPhase] = useState(""); // "preview" | "imported"
+  const [parsedEnv, setParsedEnv] = useState(null);
   const busyRef = useRef(false);
 
-  const clearStale = () => { setReport(null); setError(""); setConflicts([]); setPhase(""); };
+  const clearStale = () => { setReport(null); setError(""); setConflicts([]); setPhase(""); setParsedEnv(null); };
   const loadText = (t) => { setText(t); clearStale(); };
 
   const parse = () => {
@@ -44,6 +46,7 @@ export default function CanonicalImport() {
     try { env = JSON.parse(text); } catch (e) { setError(`Invalid JSON: ${e.message}`); return null; }
     const v = validateEnvelope(env);
     if (!v.valid) { setError(v.errors.join(" ")); return null; }
+    setParsedEnv(env);
     return env;
   };
 
@@ -62,6 +65,11 @@ export default function CanonicalImport() {
     try {
       const r = await runImport(env, data, { complete });
       setReport(r); setPhase("imported"); setConflicts(overrideConflicts(env, data));
+      // Refresh the page dataset after any non-blocked import that may have written.
+      // This prevents stale page state from causing duplicate creates on a second import.
+      if (!r.blocked) {
+        await refresh();
+      }
     } catch (e) {
       setError(`Import failed: ${e.message}`);
     } finally {
@@ -119,6 +127,7 @@ export default function CanonicalImport() {
             <button disabled={busy} onClick={() => loadText(SAMPLE_ENVELOPE)} className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-50">Load sample</button>
             <button disabled={busy} onClick={() => loadText(GOLDEN_CROSSOVER)} className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-50">Load golden crossover</button>
             <button disabled={busy} onClick={() => loadText(COMPREHENSIVE_V1_FIXTURE)} className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-50">Load comprehensive V1</button>
+            <button disabled={busy} onClick={() => loadText(REAL_CROSSOVER_ARTIFACT)} className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-50">Load real artifact</button>
             <label className={`text-xs flex items-center gap-1 ${busy ? "opacity-50 pointer-events-none" : "cursor-pointer text-muted-foreground hover:text-foreground"}`}>
               <Upload className="w-3.5 h-3.5" /> Upload file
               <input type="file" accept=".json,application/json" className="hidden" onChange={onFile} disabled={busy} />
@@ -190,6 +199,14 @@ export default function CanonicalImport() {
           )}
         </Card>
       )}
+
+      <DuplicateRepair
+        envelope={parsedEnv}
+        data={data}
+        complete={complete}
+        disabled={busy || loading || incomplete}
+        onAfterRepair={refresh}
+      />
     </div>
   );
 }

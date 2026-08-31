@@ -563,11 +563,31 @@ function applyUnifiedRelationships(relationships, plans, lookups, report, allowP
 // options: { adapter, complete, allowPartialRefs, fixtureMode }
 export async function runImport(envelope, data, options = {}) {
   const adapter = options.adapter || createBase44Adapter();
-  const complete = options.complete !== false;
   const allowPartialRefs = !!options.allowPartialRefs;
   const report = emptyReport();
 
-  const plan = planImport(envelope, data, options);
+  // ---- FRESH READ: load complete live dataset before mutation planning ----
+  // Caller-supplied data may be stale (e.g. after a prior import on the same page
+  // mutated the database but the page dataset was not yet refreshed). Mutation
+  // planning MUST use a fresh, complete live dataset — never trust caller data
+  // as the authority for create/update/unchanged decisions. If any required
+  // fresh read fails or completeness cannot be proven, block before writes.
+  let liveData = {};
+  try {
+    const loaded = await Promise.all(
+      ENTITY_KINDS.map(async (k) => [k, await adapter.listAll(k)])
+    );
+    liveData = Object.fromEntries(loaded);
+  } catch (e) {
+    report.blocked = true;
+    report.blockedReasons = [`incomplete existing-dataset load: ${e.message}`];
+    report.sync_state = "import_blocked";
+    report.counts = countReport(report);
+    return report;
+  }
+
+  // Use liveData (NOT caller data) as the authority for planning.
+  const plan = planImport(envelope, liveData, options);
   if (!plan.valid) {
     report.failed.push({ reason: plan.errors.join(" ") });
     report.blocked = true; report.blockedReasons = plan.errors; report.sync_state = "import_blocked";
@@ -578,8 +598,8 @@ export async function runImport(envelope, data, options = {}) {
   plan.ambiguous.forEach((a) => report.ambiguous.push(a));
   plan.capability_findings.forEach((c) => report.capability_findings.push(c));
 
-  // ---- Preflight: block before any write ----
-  const preflight = preflightImport(envelope, data, { ...options, complete, allowPartialRefs });
+  // ---- Preflight: block before any write (using fresh live data) ----
+  const preflight = preflightImport(envelope, liveData, { ...options, complete: true, allowPartialRefs });
   report.blocked = preflight.blocked;
   report.blockedReasons = preflight.reasons;
   if (preflight.blocked) {
@@ -631,7 +651,7 @@ export async function runImport(envelope, data, options = {}) {
       partialFailure = true;
     }
   }
-  ENTITY_KINDS.forEach((k) => { if (!fresh[k]) fresh[k] = (data[k] || []).map((r) => ({ ...r })); });
+  ENTITY_KINDS.forEach((k) => { if (!fresh[k]) fresh[k] = (liveData[k] || []).map((r) => ({ ...r })); });
   involved.forEach((e) => {
     const recs = new Map((fresh[e] || []).map((r) => [r.id, r]));
     items.filter((i) => i.entity === e && recordByItem.has(i)).forEach((i) => {
@@ -857,6 +877,31 @@ export function createMemoryAdapter(initial = {}) {
     _store: store,
   };
 }
+
+// The REAL crossover artifact that exposed the persistence/idempotence defect.
+// source: homelab-foundation, commit a1f33a877db26ed0d351113ca064791eb7f4792d
+// content_digest: sha256:8b319e237e926cb014b963107348f02f12f065e298522ebfa2ee85be4558b6e7
+// 4 Nodes, 2 Execution Environments, 1 Workload, 3 relationships.
+export const REAL_CROSSOVER_ARTIFACT = `{
+  "schema_version": "adaptive-homelab-atlas/v1",
+  "generated_at": "2026-08-31T00:00:00Z",
+  "producer": { "name": "hlctl", "version": "1.0.0" },
+  "source": { "repository": "homelab-foundation", "commit": "a1f33a877db26ed0d351113ca064791eb7f4792d", "is_dirty": false, "content_digest": "sha256:8b319e237e926cb014b963107348f02f12f065e298522ebfa2ee85be4558b6e7" },
+  "entities": [
+    { "schema": "homelab.node/v1", "kind": "node", "id": "futro", "provenance": { "source_class": "canonical" }, "identity": { "physical_name": "futro" } },
+    { "schema": "homelab.node/v1", "kind": "node", "id": "pve7", "provenance": { "source_class": "canonical" }, "identity": { "physical_name": "pve7" } },
+    { "schema": "homelab.node/v1", "kind": "node", "id": "rack1", "provenance": { "source_class": "canonical" }, "identity": { "physical_name": "rack1" } },
+    { "schema": "homelab.node/v1", "kind": "node", "id": "rig9", "provenance": { "source_class": "canonical" }, "identity": { "physical_name": "rig9" } },
+    { "schema": "homelab.execution-provider/v1", "kind": "execution-provider", "id": "files1", "provenance": { "source_class": "canonical" }, "runtime": { "kind": "lxc" } },
+    { "schema": "homelab.execution-provider/v1", "kind": "execution-provider", "id": "tools1", "provenance": { "source_class": "canonical" }, "runtime": { "kind": "lxc" } },
+    { "schema": "homelab.workload/v1", "kind": "workload", "id": "ssd-intake", "provenance": { "source_class": "canonical" }, "display_name": "SSD Intake", "requirements": { "capabilities": [ { "type": "block-device-intake", "instance": "intake0" } ] } }
+  ],
+  "relationships": [
+    { "source": "execution-provider:files1", "type": "hosted_on", "target": "node:pve7" },
+    { "source": "execution-provider:tools1", "type": "hosted_on", "target": "node:pve7" },
+    { "source": "workload:ssd-intake", "type": "placement_allowed_on_provider", "target": "execution-provider:tools1" }
+  ]
+}`;
 
 export const SAMPLE_ENVELOPE = `{
   "schema_version": "adaptive-homelab-atlas/v1",

@@ -312,13 +312,13 @@ describe("V1 dataset safety", () => {
     expect(r.unchanged.concat(r.updated).some((u) => u.canonical_id === "node:comp-node-1")).toBe(true);
     expect(r.created.some((c) => c.canonical_id === "node:comp-node-1")).toBe(false);
   });
-  it("adapter listAll failure causes partial failure (not silent 0 records)", async () => {
+  it("adapter listAll failure blocks import (not silent 0 records)", async () => {
     const adapter = createMemoryAdapter({});
     const d0 = {};
     for (const k of ["Node", "ExecutionEnvironment", "Workload", "Dependency"]) d0[k] = await adapter.listAll(k);
     // First import succeeds
     await runImport(COMP, d0, { adapter });
-    // Now make listAll throw for the post-write refresh
+    // Now make listAll throw — fresh-read before mutation planning must block
     const origListAll = adapter.listAll.bind(adapter);
     let callCount = 0;
     adapter.listAll = async (entity) => {
@@ -329,8 +329,10 @@ describe("V1 dataset safety", () => {
     const d1 = {};
     for (const k of ["Node", "ExecutionEnvironment", "Workload", "Dependency"]) d1[k] = await adapter.listAll(k);
     const r = await runImport(COMP, d1, { adapter });
-    expect(r.partial).toBe(true);
-    expect(r.sync_state).toBe("partial_failure");
+    // Fresh-read failure blocks before any writes — never silent 0 records
+    expect(r.blocked).toBe(true);
+    expect(r.sync_state).toBe("import_blocked");
+    expect(r.blockedReasons[0]).toMatch(/incomplete existing-dataset load/);
   });
   it("fixture node is not operational and excluded from realDataset", async () => {
     const { data } = await importFixture(GOLDEN);
