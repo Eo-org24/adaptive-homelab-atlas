@@ -37,12 +37,16 @@ export const REF_FIELDS = [
   { entity: "StorageDevice", field: "current_node", target: "Node" },
   { entity: "StoragePool", field: "node", target: "Node" },
   { entity: "StoragePool", field: "device_ids", target: "StorageDevice", array: true },
+  { entity: "SwitchPort", field: "device", target: "NetworkDevice" },
   { entity: "Task", field: "dependency_task", target: "Task" },
 ];
 
 export const refFieldNames = (entity) => REF_FIELDS.filter((f) => f.entity === entity).map((f) => f.field);
 
 // Build id + canonical_id lookup maps from an aggregated data map.
+// NOTE: byCanonical is a Map and silently keeps the LAST record for a duplicate
+// canonical_id. For canonical import identity matching (which must distinguish
+// 0/1/multiple existing matches), use buildCanonicalIndex / canonicalMatches.
 export function buildLookups(data) {
   const byId = {};
   const byCanonical = {};
@@ -55,6 +59,29 @@ export function buildLookups(data) {
     });
   });
   return { byId, byCanonical };
+}
+
+// Canonical-identity index that distinguishes ZERO / ONE / MULTIPLE existing
+// matches per canonical_id. Used by canonical import preflight: an incoming
+// canonical_id that maps to multiple existing records is AMBIGUOUS and must
+// BLOCK the import object — never silently choose one.
+export function buildCanonicalIndex(data) {
+  const byCanonical = {};
+  ENTITY_KINDS.forEach((k) => {
+    byCanonical[k] = new Map(); // cid -> [records]
+    (data[k] || []).forEach((r) => {
+      if (!r || !r.canonical_id) return;
+      if (!byCanonical[k].has(r.canonical_id)) byCanonical[k].set(r.canonical_id, []);
+      byCanonical[k].get(r.canonical_id).push(r);
+    });
+  });
+  return { byCanonical };
+}
+
+// Returns the array of existing records matching a canonical_id (0/1/multiple).
+export function canonicalMatches(kind, cid, index) {
+  if (!index || !index.byCanonical || !index.byCanonical[kind] || !cid) return [];
+  return index.byCanonical[kind].get(cid) || [];
 }
 
 // Resolve a reference value to a record. Tries canonical_id first, then internal id.
@@ -115,6 +142,7 @@ export function findReferences(targetType, targetId, data) {
     if (p.node === targetId && targetType === "Node") push("StoragePool", p, "node");
     if ((p.device_ids || []).includes(targetId) && targetType === "StorageDevice") push("StoragePool", p, "device_ids");
   });
+  (data.SwitchPort || []).forEach((sp) => { if (sp.device === targetId && targetType === "NetworkDevice") push("SwitchPort", sp, "device"); });
   (data.Decision || []).forEach((d) => {
     if ((d.related_nodes || []).includes(targetId) && targetType === "Node") push("Decision", d, "related_nodes");
     if ((d.related_workloads || []).includes(targetId) && targetType === "Workload") push("Decision", d, "related_workloads");

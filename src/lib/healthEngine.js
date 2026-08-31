@@ -5,14 +5,15 @@
 // No AI prose: a finding exists only if it can be proven from current data; UNKNOWN where it cannot.
 
 import { detectCycles, fmtGB, nodeAllocations, nodeOversubscription, environmentUsage, environmentOversubscription, nodeStorageUsable } from "@/lib/homelab";
-import { readFieldProvenance } from "@/lib/provenance";
+import { readFieldProvenance, staleStatus, observationCategory, isSample } from "@/lib/provenance";
 import { buildLookups, resolveRef, refFieldNames, DEP_TYPE_MAP } from "@/lib/relationships";
 
 const GEN_AT = new Date().toISOString();
 const SEVERITY_RANK = { critical: 0, error: 1, warning: 2, info: 3 };
-const STALE_DAYS = 90; // configurable freshness threshold (§12)
+// Staleness thresholds are defined ONCE in provenance.js (category-aware).
+// The health engine consumes that shared policy — no competing fixed threshold.
 
-const CANONICAL_ENTITIES = ["Node", "ExecutionEnvironment", "Workload", "Decision", "Dependency", "StorageDevice", "NetworkDevice", "StoragePool"];
+const CANONICAL_ENTITIES = ["Node", "ExecutionEnvironment", "Workload", "Decision", "Dependency", "StorageDevice", "NetworkDevice", "StoragePool", "SwitchPort"];
 
 function nameOf(list, id, key) {
   if (!id || !list) return "";
@@ -20,7 +21,7 @@ function nameOf(list, id, key) {
   return r ? (r[key] || r.hostname || r.name || r.title || id) : "";
 }
 
-export function runHealthChecks(data) {
+export function runHealthChecks(data, options = {}) {
   // Harden against null / non-object records so malformed input fails safely.
   const clean = {};
   Object.keys(data || {}).forEach((k) => { clean[k] = Array.isArray(data[k]) ? data[k].filter((v) => v && typeof v === "object") : data[k]; });
@@ -35,6 +36,16 @@ export function runHealthChecks(data) {
   const pools = data.StoragePool || [];
   const netdevs = data.NetworkDevice || [];
   const changes = data.PlannedChange || [];
+  const ports = data.SwitchPort || [];
+
+  // Sample data must NOT participate in real-infrastructure conclusions (capacity,
+  // SPOF, placement) unless the operator explicitly enables INCLUDE SAMPLE DATA.
+  // Provenance/identity/relationship/data-quality checks still run on the full set
+  // (so sample-data presence is still flagged).
+  const includeSample = options.includeSample === true;
+  const realNodes = includeSample ? nodes : nodes.filter((n) => !isSample(n));
+  const realWorkloads = includeSample ? workloads : workloads.filter((w) => !isSample(w));
+  const realEnvs = includeSample ? envs : envs.filter((e) => !isSample(e));
 
   const nodeIds = new Set(nodes.map((n) => n.id));
   const wlIds = new Set(workloads.map((w) => w.id));
@@ -96,6 +107,10 @@ export function runHealthChecks(data) {
       if (did && !storageIds.has(did)) push({ code: "POOL_MISSING_DEVICE", severity: "error", category: "relationship", affected_type: "storage_pool", affected_id: p.id, affected_canonical_id: p.canonical_id, affected_name: p.name, title: "Storage pool references missing device", explanation: `Pool "${p.name}" lists a storage device that no longer exists.`, evidence: [`device_ids includes ${did}`], recommendation: "Remove the stale device from the pool or restore the device record." });
     });
   });
+  // SwitchPort referencing a missing network device
+  ports.forEach((sp) => {
+    if (sp.device && !ndIds.has(sp.device)) push({ code: "DANGLING_DEVICE_REF", severity: "error", category: "relationship", affected_type: "switch_port", affected_id: sp.id, affected_canonical_id: sp.canonical_id, affected_name: sp.port_identifier, title: "Dangling switch-port device reference", explanation: `Switch port "${sp.port_identifier}" references a network device that no longer exists.`, evidence: [`device=${sp.device}`], recommendation: "Re-link the port to a valid network device or restore the device record." });
+  });
 
   // ---------- IDENTITY: duplicate canonical IDs ----------
   const canonicalIndex = new Map();
@@ -110,24 +125,24 @@ export function runHealthChecks(data) {
     if (recs.length > 1) push({ code: "DUPLICATE_CANONICAL_ID", severity: "error", category: "identity", affected_type: recs[0].entity.toLowerCase(), affected_id: recs[0].id, affected_canonical_id: cid, affected_name: recs[0].name, title: "Duplicate canonical ID", explanation: `Canonical ID "${cid}" is claimed by ${recs.length} records.`, evidence: recs.map((r) => `${r.entity}:${r.name}`), recommendation: "Resolve the duplicate — canonical IDs must be unique." });
   });
 
-  // ---------- CAPACITY ----------
+  // ---------- CAPACITY (real infrastructure only — sample data excluded) ----------
   const nodeById = Object.fromEntries(nodes.map((n) => [n.id, n]));
   const envById = Object.fromEntries(envs.map((e) => [e.id, e]));
-  nodes.forEach((n) => {
-    const over = nodeOversubscription(n, workloads, envs, pools);
-    const alloc = nodeAllocations(n, workloads, envs);
+  realNodes.forEach((n) => {
+    const over = nodeOversubscription(n, realWorkloads, realEnvs, pools);
+    const alloc = nodeAllocations(n, realWorkloads, realEnvs);
     if (over.cpu) push({ code: "NODE_CPU_OVERSUBSCRIBED", severity: "error", category: "capacity", affected_type: "node", affected_id: n.id, affected_canonical_id: n.canonical_id, affected_name: n.hostname, title: "Node CPU oversubscribed", explanation: `Allocated CPU on "${n.hostname}" exceeds capacity by ${over.cpu}.`, evidence: [`allocated ${alloc.cpu} > capacity ${n.logical_cpus ?? n.physical_cores}`], recommendation: "Reduce environment allocations or move workloads off this node." });
     if (over.ram) push({ code: "NODE_RAM_OVERSUBSCRIBED", severity: "error", category: "capacity", affected_type: "node", affected_id: n.id, affected_canonical_id: n.canonical_id, affected_name: n.hostname, title: "Node RAM oversubscribed", explanation: `Allocated RAM on "${n.hostname}" exceeds capacity by ${fmtGB(over.ram)}.`, evidence: [`allocated ${alloc.ram}GB > capacity ${n.ram_capacity_gb}GB`], recommendation: "Reduce environment allocations or move workloads off this node." });
     if (over.storage) push({ code: "NODE_STORAGE_OVERSUBSCRIBED", severity: "error", category: "capacity", affected_type: "node", affected_id: n.id, affected_canonical_id: n.canonical_id, affected_name: n.hostname, title: "Node storage oversubscribed", explanation: `Allocated storage on "${n.hostname}" exceeds usable pool capacity by ${fmtGB(over.storage)}.`, evidence: [`allocated ${alloc.storage}GB > usable ${nodeStorageUsable(n, pools).usable}GB`], recommendation: "Add pool capacity or relocate storage-heavy workloads." });
   });
-  envs.forEach((e) => {
-    const over = environmentOversubscription(e, workloads);
-    const usage = environmentUsage(e, workloads);
+  realEnvs.forEach((e) => {
+    const over = environmentOversubscription(e, realWorkloads);
+    const usage = environmentUsage(e, realWorkloads);
     if (over.cpu) push({ code: "ENV_CPU_OVERSUBSCRIBED", severity: "error", category: "capacity", affected_type: "environment", affected_id: e.id, affected_canonical_id: e.canonical_id, affected_name: e.name, title: "Environment CPU oversubscribed", explanation: `Workloads in "${e.name}" require more CPU than allocated.`, evidence: [`usage ${usage.cpu} > allocation ${e.cpu_allocation}`], recommendation: "Increase environment CPU allocation or move workloads out." });
     if (over.ram) push({ code: "ENV_RAM_OVERSUBSCRIBED", severity: "error", category: "capacity", affected_type: "environment", affected_id: e.id, affected_canonical_id: e.canonical_id, affected_name: e.name, title: "Environment RAM oversubscribed", explanation: `Workloads in "${e.name}" require more RAM than allocated.`, evidence: [`usage ${usage.ram}GB > allocation ${e.ram_allocation_gb}GB`], recommendation: "Increase environment RAM allocation or move workloads out." });
     if (over.storage) push({ code: "ENV_STORAGE_OVERSUBSCRIBED", severity: "warning", category: "capacity", affected_type: "environment", affected_id: e.id, affected_canonical_id: e.canonical_id, affected_name: e.name, title: "Environment storage oversubscribed", explanation: `Workloads in "${e.name}" require more storage than allocated.`, evidence: [`usage ${usage.storage}GB > allocation ${e.storage_allocation_gb}GB`], recommendation: "Increase environment storage allocation or move workloads out." });
   });
-  workloads.forEach((w) => {
+  realWorkloads.forEach((w) => {
     const env = w.current_environment ? envById[w.current_environment] : null;
     const host = (env && env.current_host) ? nodeById[env.current_host] : (w.current_host ? nodeById[w.current_host] : null);
     if (w.lifecycle === "active" && !env && !w.current_host) push({ code: "WORKLOAD_PLACEMENT_UNRESOLVED", severity: "warning", category: "capacity", affected_type: "workload", affected_id: w.id, affected_canonical_id: w.canonical_id, affected_name: w.name, title: "Workload placement unresolved", explanation: `Active workload "${w.name}" has no execution environment and no host.`, evidence: ["no current_environment", "no current_host"], recommendation: "Assign an execution environment or host." });

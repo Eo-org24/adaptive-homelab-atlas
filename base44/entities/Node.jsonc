@@ -167,12 +167,21 @@
     },
     "source_commit": {
       "type": "string",
-      "title": "Source commit"
+      "title": "Source commit (value change)"
     },
     "imported_at": {
       "type": "string",
       "format": "date-time",
-      "title": "Imported at"
+      "title": "Imported at (value change)"
+    },
+    "last_seen_source_commit": {
+      "type": "string",
+      "title": "Last seen in canonical snapshot (commit)"
+    },
+    "last_seen_import_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Last seen in canonical snapshot (import time)"
     },
     "external_id": {
       "type": "string",

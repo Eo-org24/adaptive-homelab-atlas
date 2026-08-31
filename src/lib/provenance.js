@@ -13,6 +13,25 @@ export function normalizeSourceKind(k) {
   return KIND_MAP[k] || "unknown";
 }
 
+// A record is "sample" if its truth state (source_kind or state_classification)
+// normalizes to "sample". Sample data must NOT participate in real-infrastructure
+// calculations unless the operator explicitly enables INCLUDE SAMPLE DATA.
+export function isSample(rec) {
+  if (!rec) return false;
+  return normalizeSourceKind(rec.source_kind || rec.state_classification) === "sample";
+}
+
+// Return a dataset copy with sample records removed from every entity array.
+// When includeSample is true (or no data), returns the input unchanged.
+export function realDataset(data, { includeSample = false } = {}) {
+  if (includeSample || !data) return data;
+  const out = {};
+  Object.keys(data).forEach((k) => {
+    out[k] = Array.isArray(data[k]) ? data[k].filter((r) => !isSample(r)) : data[k];
+  });
+  return out;
+}
+
 // Category-aware staleness configuration (§12). Operator-configurable; sensible defaults.
 export const STALE_CONFIG = {
   hardware: { freshDays: 180, agingDays: 365, label: "Hardware inventory" },
