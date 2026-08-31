@@ -62,9 +62,12 @@ export default function CanonicalImport() {
     try {
       const r = await runImport(env, data, { complete });
       setReport(r); setPhase("imported"); setConflicts(overrideConflicts(env, data));
-    } catch (e) { setError(`Import failed: ${e.message}`); }
-    busyRef.current = false;
-    setBusy(false);
+    } catch (e) {
+      setError(`Import failed: ${e.message}`);
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
   };
 
   const onFile = (e) => {
@@ -125,8 +128,9 @@ export default function CanonicalImport() {
         <textarea
           value={text}
           onChange={(e) => loadText(e.target.value)}
+          disabled={busy}
           placeholder='Paste a canonical snapshot envelope here. Must include "schema_version": "adaptive-homelab-atlas/v1".'
-          className="w-full h-64 rounded-md border border-input bg-background px-3 py-2 text-xs font-mono"
+          className={`w-full h-64 rounded-md border border-input bg-background px-3 py-2 text-xs font-mono ${busy ? "opacity-60 cursor-not-allowed" : ""}`}
         />
         <div className="flex items-center gap-2 mt-3 flex-wrap">
           <button onClick={onPreview} disabled={busy || loading || incomplete} className="inline-flex items-center gap-1.5 rounded-md border border-input bg-transparent px-3 py-1.5 text-sm hover:bg-accent disabled:opacity-50" title={incomplete ? "Dataset incomplete — preview disabled" : ""}>

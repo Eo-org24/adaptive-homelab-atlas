@@ -120,14 +120,16 @@ describe("§1: Malformed input attacks", () => {
     it(`preview: ${label} — error shown, no report, no success`, () => {
       renderPage();
       setTextarea(input);
-      try { clickPreview(); } catch (e) { /* should not throw */ }
+      // No exception-swallowing wrapper: if clickPreview throws, Vitest must fail.
+      clickPreview();
       expectNoReport();
       expectNoSuccess();
     });
     it(`run: ${label} — no silent success, no write`, async () => {
       renderPage();
       setTextarea(input);
-      try { clickRun(); } catch (e) { /* should not throw */ }
+      // No exception-swallowing wrapper: if clickRun throws, Vitest must fail.
+      clickRun();
       await waitFor(() => expectNoSuccess());
       expect(mockRunImport).not.toHaveBeenCalled();
     });
@@ -137,7 +139,8 @@ describe("§1: Malformed input attacks", () => {
     it(`preview: ${label} — blocked report shown, no success`, () => {
       renderPage();
       setTextarea(input);
-      try { clickPreview(); } catch (e) { /* should not throw */ }
+      // No exception-swallowing wrapper: if clickPreview throws, Vitest must fail.
+      clickPreview();
       expect(screen.getByText(/Import report/i)).toBeInTheDocument();
       expect(screen.getAllByText(/Import blocked/i).length).toBeGreaterThan(0);
       expectNoSuccess();
@@ -146,7 +149,8 @@ describe("§1: Malformed input attacks", () => {
       mockRunImport.mockResolvedValue(makeReport({ sync_state: "import_blocked", blocked: true, blockedReasons: ["validation failed"] }));
       renderPage();
       setTextarea(input);
-      try { clickRun(); } catch (e) { /* should not throw */ }
+      // No exception-swallowing wrapper: if clickRun throws, Vitest must fail.
+      clickRun();
       await waitFor(() => expectNoSuccess());
     });
   });
@@ -770,3 +774,230 @@ describe("§22: Accessibility / operator safety basics", () => {
     });
   });
 });
+
+// ---- §23: ACTIVE-IMPORT ARTIFACT LOCK ----
+describe("§23: Active-import artifact lock", () => {
+  it("textarea is disabled while import is running and re-enabled after", async () => {
+    let resolveImport;
+    mockRunImport.mockReturnValue(new Promise(r => { resolveImport = r; }));
+    renderPage();
+    const textarea = screen.getByPlaceholderText(/Paste a canonical snapshot/);
+    // Before import — editable
+    expect(textarea).not.toBeDisabled();
+    setTextarea(COMP_STR);
+    clickRun();
+    // During import — locked
+    await waitFor(() => expect(textarea).toBeDisabled());
+    // Resolve import
+    resolveImport(makeReport({ sync_state: "synchronized" }));
+    await waitFor(() => expect(textarea).not.toBeDisabled());
+  });
+
+  it("operator cannot change visible artifact during import — textarea is locked", async () => {
+    let resolveImport;
+    mockRunImport.mockReturnValue(new Promise(r => { resolveImport = r; }));
+    renderPage();
+    const textarea = screen.getByPlaceholderText(/Paste a canonical snapshot/);
+    setTextarea(COMP_STR);
+    clickRun();
+    // textarea is disabled (real DOM restriction prevents user changes in browser)
+    await waitFor(() => expect(textarea).toBeDisabled());
+    // The import was started with artifact A (COMP) — that is the parsed object
+    // the backend receives, regardless of any later textarea interaction.
+    const calledEnv = mockRunImport.mock.calls[0][0];
+    expect(calledEnv.source.commit).toBe("comp1234");
+    // Resolve import for A
+    resolveImport(makeReport({ sync_state: "synchronized" }));
+    await waitFor(() => expect(screen.getByText("Import complete")).toBeInTheDocument());
+    // Textarea becomes editable afterward
+    await waitFor(() => expect(textarea).not.toBeDisabled());
+  });
+
+  it("file input, sample, golden, and comprehensive buttons remain disabled during import", async () => {
+    let resolveImport;
+    mockRunImport.mockReturnValue(new Promise(r => { resolveImport = r; }));
+    const { container } = renderPage();
+    setTextarea(COMP_STR);
+    clickRun();
+    await waitFor(() => {
+      expect(container.querySelector('input[type="file"]')).toBeDisabled();
+      expect(screen.getByText(/Load sample/i).closest("button")).toBeDisabled();
+      expect(screen.getByText(/Load golden crossover/i).closest("button")).toBeDisabled();
+      expect(screen.getByText(/Load comprehensive V1/i).closest("button")).toBeDisabled();
+    });
+    resolveImport(makeReport({ sync_state: "synchronized" }));
+    await waitFor(() => {
+      expect(container.querySelector('input[type="file"]')).not.toBeDisabled();
+      expect(screen.getByText(/Load sample/i).closest("button")).not.toBeDisabled();
+    });
+  });
+});
+
+// ---- §24: IMPORTER REJECTION RECOVERY ----
+describe("§24: Importer rejection recovery", () => {
+  it("rejected import shows error, releases busy, and allows retry", async () => {
+    mockRunImport.mockRejectedValueOnce(new Error("Network failure"));
+    renderPage();
+    setTextarea(COMP_STR);
+    clickRun();
+    await waitFor(() => {
+      expect(screen.getByText(/Import failed: Network failure/i)).toBeInTheDocument();
+    });
+    // No success language
+    expectNoSuccess();
+    // Busy state ended — button re-enabled
+    expect(screen.getByText(/Run import/i).closest("button")).not.toBeDisabled();
+    // busyRef released — second import can execute
+    mockRunImport.mockResolvedValueOnce(makeReport({ sync_state: "synchronized" }));
+    clickRun();
+    await waitFor(() => {
+      expect(screen.getByText("Import complete")).toBeInTheDocument();
+    });
+    // Exactly two calls total
+    expect(mockRunImport).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ---- §25: RAPID FAILURE / RETRY ----
+describe("§25: Rapid failure / retry", () => {
+  it("first call rejects, immediate retry succeeds — no stale failure after success", async () => {
+    mockRunImport.mockRejectedValueOnce(new Error("timeout"));
+    renderPage();
+    setTextarea(COMP_STR);
+    clickRun();
+    await waitFor(() => {
+      expect(screen.getByText(/Import failed: timeout/i)).toBeInTheDocument();
+    });
+    // Immediately retry after UI unlock
+    mockRunImport.mockResolvedValueOnce(makeReport({ sync_state: "synchronized" }));
+    clickRun();
+    await waitFor(() => {
+      expect(screen.getByText("Import complete")).toBeInTheDocument();
+    });
+    // Exactly two total importer calls
+    expect(mockRunImport).toHaveBeenCalledTimes(2);
+    // No stale failure message belonging to the first attempt
+    expect(screen.queryByText(/Import failed/i)).not.toBeInTheDocument();
+  });
+});
+
+// ---- §26: CONFLICT-INDEX REGRESSION (unified numeric vs legacy array) ----
+describe("§26: Conflict-index regression — unified numeric and legacy array locations", () => {
+  it("unified envelope: numeric first/duplicate conflict locations render without crash", () => {
+    // Duplicate canonical entity ID in unified format → first: number, duplicate: number
+    const unifiedDup = JSON.stringify({
+      ...COMP,
+      entities: [...COMP.entities, { ...COMP.entities[0] }],
+    });
+    renderPage();
+    setTextarea(unifiedDup);
+    clickPreview();
+    // Conflict section renders without throwing
+    expect(screen.getByText(/Duplicate canonical IDs \(conflicts\)/i)).toBeInTheDocument();
+    // The conflict entry is visible with numeric locations
+    expectInReport(/first at \d/i);
+    expectInReport(/duplicate at \d/i);
+  });
+
+  it("legacy section envelope: array first/duplicate conflict locations render without crash", () => {
+    // Section format with duplicate canonical_id → first: [section, idx], duplicate: [section, idx]
+    const sectionDup = JSON.stringify({
+      schema_version: "adaptive-homelab-atlas/v1",
+      generated_at: "2026-09-01T00:00:00Z",
+      producer: { name: "hlctl", version: "1.0.0" },
+      source: { repository: "homelab-foundation", commit: "abc1234", content_digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+      nodes: [
+        { canonical_id: "node:dup-1", hostname: "dup-a" },
+        { canonical_id: "node:dup-1", hostname: "dup-b" },
+      ],
+    });
+    renderPage();
+    setTextarea(sectionDup);
+    clickPreview();
+    // Conflict section renders without throwing
+    expect(screen.getByText(/Duplicate canonical IDs \(conflicts\)/i)).toBeInTheDocument();
+    // The conflict entry is visible with array locations joined by ":"
+    expectInReport(/first at nodes:0/i);
+    expectInReport(/duplicate at nodes:1/i);
+  });
+});
+
+// ---- §27: MALFORMED INPUT CLEARS PRIOR STATE (strengthened) ----
+describe("§27: Malformed input clears prior state", () => {
+  it("successful import → malformed JSON clears report, conflicts, phase, and error", async () => {
+    mockRunImport.mockResolvedValue(makeReport({
+      sync_state: "synchronized",
+      created: [{ entity: "Node", canonical_id: "node:n1" }],
+    }));
+    mockState.data = {
+      Node: [{
+        id: "ex-1", hostname: "old", canonical_id: "node:comp-node-1",
+        lifecycle_state: "maintenance",
+        field_provenance: JSON.stringify({ lifecycle_state: { local: "maintenance" } }),
+        source_kind: "canonical",
+      }],
+    };
+    renderPage();
+    setTextarea(COMP_STR);
+    clickRun();
+    await waitFor(() => {
+      expect(screen.getByText("Import complete")).toBeInTheDocument();
+    });
+    // Verify prior state exists: report, conflicts, phase
+    expect(screen.getByText(/CANONICAL_LOCAL_OVERRIDE_CONFLICT/i)).toBeInTheDocument();
+    // Now paste malformed JSON
+    setTextarea("{bad json");
+    // All prior state must be cleared
+    expectNoReport();
+    expect(screen.queryByText("Import complete")).not.toBeInTheDocument();
+    expect(screen.queryByText(/CANONICAL_LOCAL_OVERRIDE_CONFLICT/i)).not.toBeInTheDocument();
+    // The malformed payload's own error appears when Preview/Run is attempted
+    clickPreview();
+    expect(screen.getByText(/Invalid JSON/i)).toBeInTheDocument();
+  });
+
+  it("successful import → wrong schema_version clears prior report and shows validation error", async () => {
+    mockRunImport.mockResolvedValue(makeReport({ sync_state: "synchronized" }));
+    renderPage();
+    setTextarea(COMP_STR);
+    clickRun();
+    await waitFor(() => expect(screen.getByText("Import complete")).toBeInTheDocument());
+    // Replace with wrong schema_version
+    setTextarea(JSON.stringify({ ...COMP, schema_version: "v2" }));
+    expectNoReport();
+    expect(screen.queryByText("Import complete")).not.toBeInTheDocument();
+    clickPreview();
+    expect(screen.getByText(/Unsupported schema_version/i)).toBeInTheDocument();
+  });
+});
+
+// ---- §28: BUSY GUARD RELEASE STRUCTURAL ROBUSTNESS ----
+describe("§28: Busy guard release — finally guarantees unlock", () => {
+  it("busyRef and busy are released even when runImport throws synchronously", async () => {
+    // Synchronous throw inside runImport (not a rejected promise)
+    mockRunImport.mockImplementation(() => { throw new Error("sync blow up"); });
+    renderPage();
+    setTextarea(COMP_STR);
+    clickRun();
+    await waitFor(() => {
+      expect(screen.getByText(/Import failed: sync blow up/i)).toBeInTheDocument();
+    });
+    // Button re-enabled — busy released
+    expect(screen.getByText(/Run import/i).closest("button")).not.toBeDisabled();
+    // Textarea re-enabled — busy released
+    expect(screen.getByPlaceholderText(/Paste a canonical snapshot/)).not.toBeDisabled();
+    // Second attempt can proceed (busyRef released)
+    mockRunImport.mockResolvedValue(makeReport({ sync_state: "synchronized" }));
+    clickRun();
+    await waitFor(() => expect(screen.getByText("Import complete")).toBeInTheDocument());
+  });
+});
+
+// ---- §29: NAVIGATION SMOKE (intentionally deferred) ----
+// Full post-import navigation smoke (Node/Environment/Workload detail pages with
+// shuffled canonical producer order) is intentionally deferred. The EntityCrudPage-
+// based detail views require MemoryRouter + per-entity useEntities/useAllEntities
+// mocking + ObjectFindings/ProvenanceSection/MaintenanceList sub-component stubs,
+// which constitutes substantial new test scaffolding beyond this test-quality round.
+// Reference resolution correctness is already covered by previewImport report
+// assertions (§10, §16) and the backend v1RelationshipCorrectness test suite.
