@@ -4,7 +4,7 @@ import { describe, it, expect } from "vitest";
 import { previewImport, runImport, createMemoryAdapter, COMPREHENSIVE_V1_FIXTURE, GOLDEN_CROSSOVER } from "@/lib/canonicalImport";
 import { validateV1Strict } from "@/lib/v1Schema";
 import { overrideConflicts, isFixture, isOperational, realDataset } from "@/lib/provenance";
-import { nodeMemoryCapacity, scorePlacement, nodeOversubscription } from "@/lib/homelab";
+import { nodeOversubscription } from "@/lib/homelab";
 
 const COMP = JSON.parse(COMPREHENSIVE_V1_FIXTURE);
 const GOLDEN = JSON.parse(GOLDEN_CROSSOVER);

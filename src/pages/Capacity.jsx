@@ -4,7 +4,7 @@ import { PageHeader, Card } from "@/components/ui-bits";
 import { fmtGB, nodeAllocations, nodeStorageRaw, nodeStorageUsable, directHostedWorkloads, environmentUsage, scorePlacement, aggregateKnown, nodeMemoryCapacity } from "@/lib/homelab";
 import { realDataset } from "@/lib/provenance";
 import { EligibilityBadge, ConstraintRow, PriorityRow } from "@/components/PlacementBits";
-import { Boxes, Cpu, MemoryStick, Monitor, HardDrive, DatabaseZap } from "lucide-react";
+import { Cpu, MemoryStick, Monitor, HardDrive, Database } from "lucide-react";
 
 const LOAD = ["Node", "Workload", "ExecutionEnvironment", "StorageDevice", "StoragePool"];
 
@@ -16,7 +16,7 @@ function ResBar({ allocated, total, tone = "sky" }) {
 }
 
 export default function Capacity() {
-  const { data: rawData, complete, errors, incompleteEntities, loading } = useArchitectureDataset(LOAD);
+  const { data: rawData, complete, incompleteEntities, loading } = useArchitectureDataset(LOAD);
   // Exclude sample AND fixture records from operational capacity calculations.
   const data = useMemo(() => realDataset(rawData), [rawData]);
   const nodes = data.Node || [];
@@ -64,7 +64,7 @@ export default function Capacity() {
       {!complete && (
         <Card className="p-4 mb-4 border-rose-500/30 bg-rose-500/5">
           <div className="flex items-start gap-2">
-            <DatabaseZap className="w-4 h-4 text-rose-500 mt-0.5 shrink-0" />
+            <Database className="w-4 h-4 text-rose-500 mt-0.5 shrink-0" />
             <div>
               <div className="text-sm font-medium text-rose-600 dark:text-rose-400">DATASET INCOMPLETE</div>
               <p className="text-xs text-muted-foreground mt-1">Capacity totals may be understated due to an incomplete dataset load. Results are not authoritative.</p>

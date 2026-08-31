@@ -3,7 +3,7 @@ import { useArchitectureDataset } from "@/hooks/useArchitectureDataset";
 import { runHealthChecks, findingsBySeverity } from "@/lib/healthEngine";
 import FindingsList from "@/components/FindingsList";
 import { PageHeader, Card, StatCard } from "@/components/ui-bits";
-import { AlertOctagon, AlertTriangle, AlertCircle, Info, CheckCircle2, DatabaseZap } from "lucide-react";
+import { AlertOctagon, AlertTriangle, AlertCircle, Info, CheckCircle2, Database } from "lucide-react";
 
 const LOAD = ["Node", "Workload", "ExecutionEnvironment", "StorageDevice", "StoragePool", "NetworkDevice", "Dependency", "Maintenance", "Task", "PlannedChange", "Decision"];
 
@@ -21,7 +21,7 @@ const SECTIONS = [
 const OBJECT_TYPES = ["node", "workload", "environment", "dependency", "maintenance", "task", "storage", "storage_pool", "network_device", "planned_change", "decision"];
 
 export default function Findings() {
-  const { data, complete, errors, incompleteEntities, loading } = useArchitectureDataset(LOAD);
+  const { data, complete, incompleteEntities, loading } = useArchitectureDataset(LOAD);
   const findings = useMemo(() => runHealthChecks(data), [data]);
   const bySev = useMemo(() => findingsBySeverity(findings), [findings]);
   const [sev, setSev] = useState("all");
@@ -55,7 +55,7 @@ export default function Findings() {
       {!complete && (
         <Card className="p-4 mb-4 border-rose-500/30 bg-rose-500/5">
           <div className="flex items-start gap-2">
-            <DatabaseZap className="w-4 h-4 text-rose-500 mt-0.5 shrink-0" />
+            <Database className="w-4 h-4 text-rose-500 mt-0.5 shrink-0" />
             <div>
               <div className="text-sm font-medium text-rose-600 dark:text-rose-400">DATASET INCOMPLETE</div>
               <p className="text-xs text-muted-foreground mt-1">Findings may be missing or inaccurate due to an incomplete dataset load. Results are not authoritative.</p>

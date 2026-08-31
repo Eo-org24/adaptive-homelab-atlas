@@ -5,13 +5,13 @@ import ArchitectureGraph from "@/components/ArchitectureGraph";
 import { physicalGraph, executionGraph, dependencyGraph, storageGraph, changeGraph, placementGraph, MODES } from "@/lib/graph";
 import { runHealthChecks } from "@/lib/healthEngine";
 import { normalizeSourceKind } from "@/lib/provenance";
-import { DatabaseZap } from "lucide-react";
+import { Database } from "lucide-react";
 
 const LOAD = ["Node", "ExecutionEnvironment", "Workload", "StorageDevice", "StoragePool", "NetworkDevice", "Dependency", "Maintenance", "Task", "PlannedChange", "Decision"];
 const SEL = "rounded-md border border-input bg-background px-2 py-1.5 text-xs";
 
 export default function Architecture() {
-  const { data, complete, errors, incompleteEntities, loading } = useArchitectureDataset(LOAD);
+  const { data, complete, incompleteEntities, loading } = useArchitectureDataset(LOAD);
   const [mode, setMode] = useState("physical");
   const [fKind, setFKind] = useState("all");
   const [fLifecycle, setFLifecycle] = useState("all");
@@ -74,7 +74,7 @@ export default function Architecture() {
       {!complete && (
         <Card className="p-4 mb-4 border-rose-500/30 bg-rose-500/5">
           <div className="flex items-start gap-2">
-            <DatabaseZap className="w-4 h-4 text-rose-500 mt-0.5 shrink-0" />
+            <Database className="w-4 h-4 text-rose-500 mt-0.5 shrink-0" />
             <div>
               <div className="text-sm font-medium text-rose-600 dark:text-rose-400">DATASET INCOMPLETE</div>
               <p className="text-xs text-muted-foreground mt-1">Architecture graph may be missing objects due to an incomplete dataset load. Results are not authoritative.</p>

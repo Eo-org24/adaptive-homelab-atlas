@@ -1,10 +1,10 @@
-import React, { useState, useMemo } from "react";
+import React, { useState } from "react";
 import { useArchitectureDataset } from "@/hooks/useArchitectureDataset";
 import { validateEnvelope, previewImport, runImport, SAMPLE_ENVELOPE, GOLDEN_CROSSOVER, COMPREHENSIVE_V1_FIXTURE } from "@/lib/canonicalImport";
 import { overrideConflicts } from "@/lib/provenance";
 import SyncStatusPanel from "@/components/SyncStatusPanel";
 import { PageHeader, Card } from "@/components/ui-bits";
-import { Upload, Play, FileWarning, CheckCircle2, AlertTriangle, XCircle, Loader2, DatabaseZap } from "lucide-react";
+import { Upload, Play, FileWarning, CheckCircle2, AlertTriangle, XCircle, Loader2, Database } from "lucide-react";
 
 const LOAD = ["Node", "ExecutionEnvironment", "Workload", "Decision", "Dependency", "StorageDevice", "NetworkDevice", "StoragePool", "SwitchPort", "Task", "Maintenance", "PlannedChange"];
 
@@ -79,7 +79,7 @@ export default function CanonicalImport() {
       {incomplete && (
         <Card className="p-4 border-rose-500/30 bg-rose-500/5">
           <div className="flex items-start gap-2">
-            <DatabaseZap className="w-4 h-4 text-rose-500 mt-0.5 shrink-0" />
+            <Database className="w-4 h-4 text-rose-500 mt-0.5 shrink-0" />
             <div>
               <div className="text-sm font-medium text-rose-600 dark:text-rose-400">DATASET INCOMPLETE</div>
               <p className="text-xs text-muted-foreground mt-1">

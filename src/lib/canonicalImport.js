@@ -27,7 +27,7 @@ import { base44 } from "@/api/base44Client";
 import { ENTITY_KINDS, REF_FIELDS, DEP_TYPE_MAP, refFieldNames, buildLookups, resolveRef, buildCanonicalIndex, canonicalMatches } from "@/lib/relationships";
 import { loadEntityComplete } from "@/lib/datasetLoader";
 import { FIXTURE_TAG } from "@/lib/provenance";
-import { validateV1Strict, RELATIONSHIP_TYPES, REL_KIND_RULES } from "@/lib/v1Schema";
+import { validateV1Strict } from "@/lib/v1Schema";
 
 const V1 = "adaptive-homelab-atlas/v1";
 
