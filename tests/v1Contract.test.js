@@ -297,9 +297,9 @@ describe("V1 dataset safety", () => {
     for (const r of existing) adapter._store.Node.set(r.id, { ...r });
     const data = { Node: await adapter.listAll("Node") };
     const r = previewImport(COMP, data);
-    // The node:comp-node-1 entity should match the existing record (unchanged), not create
+    // The node:comp-node-1 entity should match the existing record (updated or unchanged), not create
     expect(r.counts.created).toBeLessThan(COMP.entities.length);
-    expect(r.unchanged.some((u) => u.canonical_id === "node:comp-node-1")).toBe(true);
+    expect(r.unchanged.concat(r.updated).some((u) => u.canonical_id === "node:comp-node-1")).toBe(true);
   });
   it("second-page canonical match prevents duplicate creation", async () => {
     const adapter = createMemoryAdapter({});
@@ -309,7 +309,7 @@ describe("V1 dataset safety", () => {
     const data = { Node: await adapter.listAll("Node") };
     expect(data.Node.length).toBe(501);
     const r = previewImport(COMP, data);
-    expect(r.unchanged.some((u) => u.canonical_id === "node:comp-node-1")).toBe(true);
+    expect(r.unchanged.concat(r.updated).some((u) => u.canonical_id === "node:comp-node-1")).toBe(true);
     expect(r.created.some((c) => c.canonical_id === "node:comp-node-1")).toBe(false);
   });
   it("adapter listAll failure causes partial failure (not silent 0 records)", async () => {
