@@ -1,6 +1,11 @@
 // Provenance / truth-state normalization and field-level overlay (backwards-compatible).
 // Standard vocabulary: canonical, observed, planned, inferred, local, sample, unknown.
 // Legacy "manual" -> local; "imported"/"documented" -> canonical (display only; data unchanged).
+//
+// Circular import note: canonicalImport.js imports FIXTURE_TAG from this module.
+// This module imports planImport from canonicalImport.js. The circular reference is safe
+// because both values are used at function-call time, not at module-load time.
+import { planImport } from "@/lib/canonicalImport";
 
 const KIND_MAP = {
   canonical: "canonical", observed: "observed", planned: "planned",
@@ -39,13 +44,17 @@ export function isOperational(rec) {
   return !isSample(rec) && !isFixture(rec);
 }
 
-// Return a dataset copy with sample records removed from every entity array.
-// When includeSample is true (or no data), returns the input unchanged.
-export function realDataset(data, { includeSample = false } = {}) {
-  if (includeSample || !data) return data;
+// Return a dataset copy with sample AND fixture records removed from every entity array.
+// Fixtures are synthetic crossover test data — never real infrastructure.
+// When includeSample/includeFixture is true, those records are retained.
+export function realDataset(data, { includeSample = false, includeFixture = false } = {}) {
+  if (!data) return data;
+  if (includeSample && includeFixture) return data;
   const out = {};
   Object.keys(data).forEach((k) => {
-    out[k] = Array.isArray(data[k]) ? data[k].filter((r) => !isSample(r)) : data[k];
+    out[k] = Array.isArray(data[k]) ? data[k].filter((r) =>
+      (!isSample(r) || includeSample) && (!isFixture(r) || includeFixture)
+    ) : data[k];
   });
   return out;
 }
@@ -103,13 +112,19 @@ export function truthLayers(rec, field, flatValue) {
   return layers;
 }
 
-// Canonical import conflict detection (§14): incoming canonical change vs existing local override.
+// Canonical import conflict detection: incoming canonical change vs existing local override.
+// Supports BOTH unified V1 (entities[]) and legacy section envelopes — reuses the SAME
+// V1 normalization/mapping logic from planImport (no second field mapper).
 export function overrideConflicts(envelope, data) {
   const conflicts = [];
   if (!envelope) return conflicts;
-  const byCid = {};
-  ["nodes", "execution_environments", "workloads", "storage_devices", "network_devices"].forEach((sec) => {
-    const kindMap = { nodes: "Node", execution_environments: "ExecutionEnvironment", workloads: "Workload", storage_devices: "StorageDevice", network_devices: "NetworkDevice" };
+  const format = Array.isArray(envelope.entities) ? "unified" : "section";
+  if (format === "unified") {
+    return overrideConflictsUnified(envelope, data);
+  }
+  // Legacy section format
+  const kindMap = { nodes: "Node", execution_environments: "ExecutionEnvironment", workloads: "Workload", storage_devices: "StorageDevice", network_devices: "NetworkDevice" };
+  Object.keys(kindMap).forEach((sec) => {
     (envelope[sec] || []).forEach((rec) => {
       if (!rec.canonical_id) return;
       const entity = kindMap[sec];
@@ -122,6 +137,25 @@ export function overrideConflicts(envelope, data) {
           conflicts.push({ canonical_id: rec.canonical_id, entity, field, canonicalValue: rec[field], localValue: fp[field].local, currentValue: existing[field] });
         }
       });
+    });
+  });
+  return conflicts;
+}
+
+// Unified V1 override conflict detection — reuses planImport's mapped items.
+function overrideConflictsUnified(envelope, data) {
+  const conflicts = [];
+  // planImport uses the SAME V1 mapping (mapUnifiedEntity) — no second field mapper.
+  const plan = planImport(envelope, data);
+  if (!plan.valid) return conflicts;
+  plan.plans.forEach((p) => {
+    if (!p.existing) return;
+    const fp = readFieldProvenance(p.existing);
+    Object.keys(fp).forEach((field) => {
+      if (fp[field].local == null) return;
+      if (p.incoming[field] != null && p.incoming[field] !== p.existing[field]) {
+        conflicts.push({ canonical_id: p.canonical_id, entity: p.entity, field, canonicalValue: p.incoming[field], localValue: fp[field].local, currentValue: p.existing[field] });
+      }
     });
   });
   return conflicts;

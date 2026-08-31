@@ -56,6 +56,9 @@ export function placementGraph(data) {
     (w.eligible_execution_providers || []).forEach((eid) => {
       edges.push({ id: `pallow-${w.id}-${eid}`, source: nid("workload", w.id), target: nid("env", eid), type: "placement-allowed", provenance: normalizeSourceKind(w.source_kind) });
     });
+    (w.placement_allowed_nodes || []).forEach((nid_) => {
+      edges.push({ id: `pallown-${w.id}-${nid_}`, source: nid("workload", w.id), target: nid("node", nid_), type: "placement-allowed-node", provenance: normalizeSourceKind(w.source_kind) });
+    });
   });
   return { nodes, edges };
 }

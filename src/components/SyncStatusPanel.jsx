@@ -8,6 +8,8 @@ const STATE_LABEL = {
   synchronized: "Synchronized",
   local_additions: "Local additions",
   import_warnings: "Import warnings",
+  import_blocked: "Import blocked",
+  partial_failure: "Partial failure",
   stale: "Stale",
 };
 const STATE_TONE = {
@@ -15,6 +17,8 @@ const STATE_TONE = {
   synchronized: "text-emerald-500",
   local_additions: "text-sky-500",
   import_warnings: "text-amber-500",
+  import_blocked: "text-rose-500",
+  partial_failure: "text-rose-500",
   stale: "text-amber-500",
 };
 

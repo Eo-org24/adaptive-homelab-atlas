@@ -266,6 +266,14 @@ export function resourceShortages(workloads, nodes, environments, pools) {
   return out;
 }
 
+// Effective memory capacity: prefer canonical memory_gib (GiB) over legacy ram_capacity_gb (GB).
+// Do not double-count — use one or the other.
+export function nodeMemoryCapacity(node) {
+  if (node.memory_gib != null) return { value: node.memory_gib, unit: "GiB", source: "canonical" };
+  if (node.ram_capacity_gb != null) return { value: node.ram_capacity_gb, unit: "GB", source: "legacy" };
+  return { value: null, unit: null, source: null };
+}
+
 // ---------- Resource accounting layers ----------
 // Layer 1 PHYSICAL NODE CAPACITY · Layer 2 ENVIRONMENT ALLOCATION · Layer 3 WORKLOAD REQUIREMENT.
 // A workload inside an environment is counted via its environment's reservation, NOT directly against the node.
@@ -339,7 +347,8 @@ export function nodeOversubscription(node, workloads, environments, pools) {
   const out = {};
   const cpuCap = node.logical_cpus != null ? node.logical_cpus : node.physical_cores;
   if (cpuCap != null && alloc.cpu > cpuCap) out.cpu = alloc.cpu - cpuCap;
-  if (node.ram_capacity_gb != null && alloc.ram > node.ram_capacity_gb) out.ram = alloc.ram - node.ram_capacity_gb;
+  const memCap = nodeMemoryCapacity(node).value;
+  if (memCap != null && alloc.ram > memCap) out.ram = alloc.ram - memCap;
   const su = nodeStorageUsable(node, pools);
   if (su.known && alloc.storage > su.usable) out.storage = alloc.storage - su.usable;
   if (node.gpu_vram_gb != null && node.gpu_vram_gb > 0 && alloc.vram > node.gpu_vram_gb) out.vram = alloc.vram - node.gpu_vram_gb;
@@ -402,7 +411,7 @@ export function scorePlacement(workload, node, opts = {}) {
       else if (need.ram > cap - envUsage.ram) hc("ram", "RAM", "fail", `need ${need.ram}GB > env free ${(cap - envUsage.ram).toFixed(0)}GB of ${cap}GB`);
       else hc("ram", "RAM", "pass", `env free ${(cap - envUsage.ram).toFixed(0)}GB of ${cap}GB after placement`);
     } else {
-      const cap = node.ram_capacity_gb;
+      const cap = nodeMemoryCapacity(node).value;
       if (cap == null) hc("ram", "RAM", "unknown", "node RAM capacity not documented");
       else if (need.ram > cap - nodeAlloc.ram) hc("ram", "RAM", "fail", `need ${need.ram}GB > node free ${(cap - nodeAlloc.ram).toFixed(0)}GB of ${cap}GB`);
       else hc("ram", "RAM", "pass", `node free ${(cap - nodeAlloc.ram).toFixed(0)}GB of ${cap}GB after placement`);
@@ -460,10 +469,13 @@ export function scorePlacement(workload, node, opts = {}) {
     else hc("availability", "Availability", "pass", "node is always-on");
   } else hc("availability", "Availability", "na", "no always-on requirement");
 
-  // Explicit eligible/preferred allowlist (hard when an eligible list is populated)
-  const eligible = workload.eligible_alternative_nodes || [];
-  if (eligible.length > 0) {
-    if (eligible.includes(node.id) || workload.preferred_node === node.id) hc("placement", "Placement rules", "pass", "node is in declared eligible/preferred set");
+  // Explicit eligible/preferred allowlist (hard when an eligible list is populated).
+  // Consume canonical placement_allowed_nodes first, then legacy eligible_alternative_nodes.
+  const canonicalAllowed = workload.placement_allowed_nodes || [];
+  const legacyEligible = workload.eligible_alternative_nodes || [];
+  const hasExplicit = canonicalAllowed.length > 0 || legacyEligible.length > 0;
+  if (hasExplicit) {
+    if (canonicalAllowed.includes(node.id) || legacyEligible.includes(node.id) || workload.preferred_node === node.id) hc("placement", "Placement rules", "pass", "node is in declared eligible/preferred set");
     else hc("placement", "Placement rules", "fail", "node not in declared eligible/preferred list");
   } else hc("placement", "Placement rules", "na", "no explicit eligible list");
 
@@ -517,7 +529,7 @@ export function scorePlacement(workload, node, opts = {}) {
 
   // 4. Scalability — headroom on the binding resource
   let scScore, scState, scReason;
-  const bCap = inEnv ? env.ram_allocation_gb : node.ram_capacity_gb;
+  const bCap = inEnv ? env.ram_allocation_gb : nodeMemoryCapacity(node).value;
   const bUsed = inEnv ? (envUsage ? envUsage.ram : 0) : nodeAlloc.ram;
   if (bCap == null) { scScore = 0; scState = "unknown"; scReason = "Capacity data insufficient to evaluate headroom"; }
   else {

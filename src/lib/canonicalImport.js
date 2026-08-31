@@ -106,7 +106,8 @@ function changed(incoming, existing, entity) {
 }
 
 // ---- V1 unified entity -> Atlas-shaped record (nested V1 fields consumed explicitly) ----
-function mapUnifiedEntity(e, entity, fixtureTag) {
+// Exported so overrideConflicts() can reuse the SAME mapping (no second field mapper).
+export function mapUnifiedEntity(e, entity, fixtureTag) {
   const cid = `${e.kind}:${e.id}`;
   const rec = { canonical_id: cid };
   const tags = Array.isArray(e.tags) ? [...e.tags] : [];

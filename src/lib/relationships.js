@@ -28,6 +28,7 @@ export const REF_FIELDS = [
   { entity: "Workload", field: "current_host", target: "Node" },
   { entity: "Workload", field: "preferred_node", target: "Node" },
   { entity: "Workload", field: "eligible_alternative_nodes", target: "Node", array: true },
+  { entity: "Workload", field: "placement_allowed_nodes", target: "Node", array: true },
   { entity: "Workload", field: "eligible_execution_providers", target: "ExecutionEnvironment", array: true },
   { entity: "Decision", field: "supersedes", target: "Decision" },
   { entity: "Decision", field: "superseded_by", target: "Decision" },

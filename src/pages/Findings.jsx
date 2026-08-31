@@ -1,9 +1,9 @@
 import React, { useMemo, useState } from "react";
-import { useAllEntities } from "@/hooks/useEntities";
+import { useArchitectureDataset } from "@/hooks/useArchitectureDataset";
 import { runHealthChecks, findingsBySeverity } from "@/lib/healthEngine";
 import FindingsList from "@/components/FindingsList";
 import { PageHeader, Card, StatCard } from "@/components/ui-bits";
-import { AlertOctagon, AlertTriangle, AlertCircle, Info, CheckCircle2 } from "lucide-react";
+import { AlertOctagon, AlertTriangle, AlertCircle, Info, CheckCircle2, DatabaseZap } from "lucide-react";
 
 const LOAD = ["Node", "Workload", "ExecutionEnvironment", "StorageDevice", "StoragePool", "NetworkDevice", "Dependency", "Maintenance", "Task", "PlannedChange", "Decision"];
 
@@ -21,7 +21,7 @@ const SECTIONS = [
 const OBJECT_TYPES = ["node", "workload", "environment", "dependency", "maintenance", "task", "storage", "storage_pool", "network_device", "planned_change", "decision"];
 
 export default function Findings() {
-  const { data, loading } = useAllEntities(LOAD);
+  const { data, complete, errors, incompleteEntities, loading } = useArchitectureDataset(LOAD);
   const findings = useMemo(() => runHealthChecks(data), [data]);
   const bySev = useMemo(() => findingsBySeverity(findings), [findings]);
   const [sev, setSev] = useState("all");

@@ -1,16 +1,17 @@
 import React, { useMemo, useState } from "react";
-import { useAllEntities } from "@/hooks/useEntities";
+import { useArchitectureDataset } from "@/hooks/useArchitectureDataset";
 import { PageHeader, Card } from "@/components/ui-bits";
 import ArchitectureGraph from "@/components/ArchitectureGraph";
 import { physicalGraph, executionGraph, dependencyGraph, storageGraph, changeGraph, placementGraph, MODES } from "@/lib/graph";
 import { runHealthChecks } from "@/lib/healthEngine";
 import { normalizeSourceKind } from "@/lib/provenance";
+import { DatabaseZap } from "lucide-react";
 
 const LOAD = ["Node", "ExecutionEnvironment", "Workload", "StorageDevice", "StoragePool", "NetworkDevice", "Dependency", "Maintenance", "Task", "PlannedChange", "Decision"];
 const SEL = "rounded-md border border-input bg-background px-2 py-1.5 text-xs";
 
 export default function Architecture() {
-  const { data, loading } = useAllEntities(LOAD);
+  const { data, complete, errors, incompleteEntities, loading } = useArchitectureDataset(LOAD);
   const [mode, setMode] = useState("physical");
   const [fKind, setFKind] = useState("all");
   const [fLifecycle, setFLifecycle] = useState("all");
@@ -70,6 +71,18 @@ export default function Architecture() {
   return (
     <div className="p-6 max-w-[1600px] mx-auto">
       <PageHeader title="Architecture Graph" description="Relationship-driven views derived live from canonical records. No separate graph database — every edge corresponds to a real relationship. Pan, zoom, and select to inspect." />
+      {!complete && (
+        <Card className="p-4 mb-4 border-rose-500/30 bg-rose-500/5">
+          <div className="flex items-start gap-2">
+            <DatabaseZap className="w-4 h-4 text-rose-500 mt-0.5 shrink-0" />
+            <div>
+              <div className="text-sm font-medium text-rose-600 dark:text-rose-400">DATASET INCOMPLETE</div>
+              <p className="text-xs text-muted-foreground mt-1">Architecture graph may be missing objects due to an incomplete dataset load. Results are not authoritative.</p>
+              {incompleteEntities.length > 0 && <p className="text-[11px] text-muted-foreground mt-1">Affected: {incompleteEntities.join(", ")}</p>}
+            </div>
+          </div>
+        </Card>
+      )}
 
       <div className="flex flex-wrap items-center gap-2 mb-3">
         <div className="flex rounded-md border border-border overflow-hidden">
