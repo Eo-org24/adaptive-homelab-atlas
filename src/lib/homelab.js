@@ -502,7 +502,7 @@ export function scorePlacement(workload, node, opts = {}) {
   let sScore, sState, sReason;
   if (inEnv) { sScore = 5; sState = "pass"; sReason = "Uses existing execution environment on this node"; }
   else if (workload.preferred_node === node.id) { sScore = 5; sState = "pass"; sReason = "Matches declared preferred node"; }
-  else if (eligible.includes(node.id)) { sScore = 4; sState = "pass"; sReason = "Listed as an eligible alternative"; }
+  else if (canonicalAllowed.includes(node.id) || legacyEligible.includes(node.id)) { sScore = 4; sState = "pass"; sReason = "Listed as an eligible alternative"; }
   else if (env) { sScore = 3; sState = "warn"; sReason = "Environment exists but is hosted elsewhere — placement here adds coordination"; }
   else { sScore = 3; sState = "warn"; sReason = "Direct-hosted placement (no execution environment)"; }
   if (node.node_type === "workstation" && workload.availability_requirement === "always_on") { sScore = 1; sState = "bad"; sReason = "Always-on workload on a workstation"; }
