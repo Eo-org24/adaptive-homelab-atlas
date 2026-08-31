@@ -5,7 +5,7 @@
 // No AI prose: a finding exists only if it can be proven from current data; UNKNOWN where it cannot.
 
 import { detectCycles, fmtGB, nodeAllocations, nodeOversubscription, environmentUsage, environmentOversubscription, nodeStorageUsable } from "@/lib/homelab";
-import { readFieldProvenance, staleStatus, observationCategory, isSample } from "@/lib/provenance";
+import { readFieldProvenance, staleStatus, observationCategory, isSample, STALE_CONFIG } from "@/lib/provenance";
 import { buildLookups, resolveRef, refFieldNames, DEP_TYPE_MAP } from "@/lib/relationships";
 
 const GEN_AT = new Date().toISOString();
@@ -187,9 +187,9 @@ export function runHealthChecks(data, options = {}) {
     }
   });
 
-  // ---------- AVAILABILITY / SPOF ----------
-  nodes.forEach((n) => {
-    const critical = workloads.filter((w) => {
+  // ---------- AVAILABILITY / SPOF (real infrastructure only — sample data excluded) ----------
+  realNodes.forEach((n) => {
+    const critical = realWorkloads.filter((w) => {
       const env = w.current_environment ? envById[w.current_environment] : null;
       const onNode = (env && env.current_host === n.id) || (!env && w.current_host === n.id);
       return onNode && (w.criticality === "high" || w.criticality === "critical");
@@ -209,7 +209,7 @@ export function runHealthChecks(data, options = {}) {
     const list = { Workload: workloads, ExecutionEnvironment: envs, Node: nodes, NetworkDevice: netdevs, StorageDevice: storage }[kind];
     return { kind, rec: (list || []).find((r) => r.id === d.target_id) };
   };
-  workloads.forEach((w) => {
+  realWorkloads.forEach((w) => {
     if (w.criticality !== "high" && w.criticality !== "critical") return;
     const hardDeps = deps.filter((d) => d.source_type === "workload" && d.source_id === w.id && d.kind !== "optional");
     hardDeps.forEach((d) => {
@@ -217,7 +217,7 @@ export function runHealthChecks(data, options = {}) {
       if (t && weakTarget(t.kind, t.rec)) push({ code: "SPOF_CRITICAL_DEP_WEAK", severity: "warning", category: "availability", affected_type: "workload", affected_id: w.id, affected_canonical_id: w.canonical_id, affected_name: w.name, title: "Single point of failure: weak mandatory dependency", explanation: `High-criticality "${w.name}" has a mandatory dependency on ${t.kind} "${t.rec.name || t.rec.hostname}" which is best-effort/degraded/retiring.`, evidence: [`dependency ${d.kind} → ${t.kind} "${t.rec.name || t.rec.hostname}"`], recommendation: "Add redundancy or strengthen the dependency target." });
     });
   });
-  workloads.forEach((w) => {
+  realWorkloads.forEach((w) => {
     const env = w.current_environment ? envById[w.current_environment] : null;
     const host = (env && env.current_host) ? nodeById[env.current_host] : (w.current_host ? nodeById[w.current_host] : null);
     if (w.availability_requirement === "always_on" && host && host.availability_expectation && host.availability_expectation !== "always_on")
@@ -240,8 +240,13 @@ export function runHealthChecks(data, options = {}) {
     if (sc === "planned" && w.lifecycle === "active") push({ code: "PLANNED_AS_CURRENT", severity: "warning", category: "provenance", affected_type: "workload", affected_id: w.id, affected_canonical_id: w.canonical_id, affected_name: w.name, title: "Planned state used as current", explanation: `"${w.name}" is active but its state is classified as planned.`, evidence: ["lifecycle=active", "state_classification=planned"], recommendation: "Re-classify as declared/observed once realized, or set lifecycle to planned." });
     if (sc === "observed" && !w.observed_at) push({ code: "NO_OBSERVATION", severity: "info", category: "provenance", affected_type: "workload", affected_id: w.id, affected_canonical_id: w.canonical_id, affected_name: w.name, title: "No observation recorded", explanation: `"${w.name}" is classified observed but has no observed_at timestamp.`, evidence: ["state_classification=observed", "observed_at empty"], recommendation: "Record an observation timestamp or re-classify." });
     if (sc === "observed" && w.observed_at) {
-      const ageDays = (Date.now() - new Date(w.observed_at).getTime()) / 86400000;
-      if (ageDays > STALE_DAYS) push({ code: "STALE_OBSERVATION", severity: "warning", category: "provenance", affected_type: "workload", affected_id: w.id, affected_canonical_id: w.canonical_id, affected_name: w.name, title: "Stale observation", explanation: `"${w.name}" was last observed ${Math.round(ageDays)} days ago (threshold ${STALE_DAYS}d).`, evidence: [`observed_at=${w.observed_at}`, `age=${Math.round(ageDays)}d`], recommendation: "Re-observe or re-classify as declared." });
+      // Shared category-aware staleness policy (provenance.js). Workloads are "service".
+      const cat = observationCategory("workload");
+      if (staleStatus(w.observed_at, cat) === "STALE") {
+        const cfg = STALE_CONFIG[cat];
+        const ageDays = Math.round((Date.now() - new Date(w.observed_at).getTime()) / 86400000);
+        push({ code: "STALE_OBSERVATION", severity: "warning", category: "provenance", affected_type: "workload", affected_id: w.id, affected_canonical_id: w.canonical_id, affected_name: w.name, title: "Stale observation", explanation: `"${w.name}" was last observed ${ageDays} days ago (stale beyond ${cfg.agingDays}d for ${cfg.label}).`, evidence: [`observed_at=${w.observed_at}`, `age=${ageDays}d`, `threshold=${cfg.agingDays}d`], recommendation: "Re-observe or re-classify as declared." });
+      }
     }
     if (sc === "sample") push({ code: "SAMPLE_DATA", severity: "info", category: "provenance", affected_type: "workload", affected_id: w.id, affected_canonical_id: w.canonical_id, affected_name: w.name, title: "Sample data present", explanation: `"${w.name}" is marked as sample data, not real infrastructure.`, evidence: ["state_classification=sample"], recommendation: "Replace with real data before relying on this record." });
   });
@@ -284,16 +289,20 @@ export function runHealthChecks(data, options = {}) {
         recommendation: "Review the override before importing, or promote it to canonical.",
       }));
       if (r.source_kind === "canonical" && r.imported_at) {
-        const ageDays = (Date.now() - new Date(r.imported_at).getTime()) / 86400000;
-        if (!isNaN(ageDays) && ageDays > STALE_DAYS) push({
-          code: "CANONICAL_SOURCE_STALE", severity: "info", category: "provenance",
-          affected_type: entity.toLowerCase(), affected_id: r.id, affected_canonical_id: r.canonical_id,
-          affected_name: r.hostname || r.name || r.title || r.model || r.id,
-          title: "Canonical source is stale",
-          explanation: `Canonical ${entity} "${r.canonical_id}" was imported ${Math.round(ageDays)} days ago — the source snapshot may have moved on.`,
-          evidence: [`imported_at=${r.imported_at}`, `age=${Math.round(ageDays)}d`],
-          recommendation: "Re-import to refresh canonical state.",
-        });
+        // Shared category-aware staleness policy (provenance.js), "default" category.
+        if (staleStatus(r.imported_at, "default") === "STALE") {
+          const cfg = STALE_CONFIG.default;
+          const ageDays = Math.round((Date.now() - new Date(r.imported_at).getTime()) / 86400000);
+          push({
+            code: "CANONICAL_SOURCE_STALE", severity: "info", category: "provenance",
+            affected_type: entity.toLowerCase(), affected_id: r.id, affected_canonical_id: r.canonical_id,
+            affected_name: r.hostname || r.name || r.title || r.model || r.id,
+            title: "Canonical source is stale",
+            explanation: `Canonical ${entity} "${r.canonical_id}" was imported ${ageDays} days ago — the source snapshot may have moved on (stale beyond ${cfg.agingDays}d).`,
+            evidence: [`imported_at=${r.imported_at}`, `age=${ageDays}d`, `threshold=${cfg.agingDays}d`],
+            recommendation: "Re-import to refresh canonical state.",
+          });
+        }
       }
     });
   });
@@ -325,6 +334,7 @@ const REF_TARGET = {
   current_host: "Node", current_environment: "ExecutionEnvironment", preferred_node: "Node",
   eligible_alternative_nodes: "Node", supersedes: "Decision", superseded_by: "Decision",
   related_nodes: "Node", related_workloads: "Workload", node: "Node", current_node: "Node",
+  device: "NetworkDevice",
 };
 
 export function findingsBySeverity(findings) {
