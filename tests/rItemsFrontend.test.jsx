@@ -12,7 +12,14 @@ const mockRunImport = vi.hoisted(() => vi.fn());
 const mockRefresh = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const mockRunRepair = vi.hoisted(() => vi.fn());
 const mockPreviewRepair = vi.hoisted(() => vi.fn());
-const mockArtifactPreviewKey = vi.hoisted(() => vi.fn((env) => env?.source?.content_digest || ""));
+// S4: Mock includes body fingerprint so identical metadata + different body → different keys
+const mockArtifactPreviewKey = vi.hoisted(() => vi.fn((env) => {
+  if (!env || !env.source) return "";
+  const src = env.source;
+  const meta = [env.schema_version || "", src.repository || "", src.commit || "", src.content_digest || ""].join("|");
+  const body = JSON.stringify(env.entities || []) + "|" + JSON.stringify(env.relationships || []);
+  return meta + "|" + body;
+}));
 
 vi.mock("@/hooks/useArchitectureDataset", () => ({
   useArchitectureDataset: () => ({ ...mockState, refresh: mockRefresh }),
@@ -75,6 +82,7 @@ function makeRepairReport(overrides = {}) {
     partial: false, recoveryRequired: false,
     phase: "complete", groups: [], remaps: [],
     deleted: [], remapped: [],
+    unverifiedRemaps: [],
     failedOperation: null,
     databaseStateUncertain: false,
     writesOccurred: false,
@@ -332,5 +340,62 @@ describe("R7/F8: partial/recovery repair + refresh rejection", () => {
       expect(screen.getByText(/Run import/i).closest("button")).not.toBeDisabled();
     });
     expect(screen.getByText(/Execute repair/i).closest("button")).not.toBeDisabled();
+  });
+});
+
+// =========================================================================
+// S4: BIND REPAIR PREVIEW TO THE ACTUAL ENVELOPE BODY
+// =========================================================================
+describe("S4: preview bound to actual envelope body (not just metadata)", () => {
+  it("identical metadata, different body → Execute disabled after switch, preview B enables Execute", async () => {
+    // Two artifacts with IDENTICAL metadata but DIFFERENT entity bodies
+    const artifactA = {
+      schema_version: "adaptive-homelab-atlas/v1",
+      generated_at: "2026-09-01T00:00:00Z",
+      producer: { name: "hlctl", version: "1.0.0" },
+      source: { repository: "homelab-foundation", commit: "same-commit", is_dirty: false, content_digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+      entities: [
+        { schema: "homelab.node/v1", kind: "node", id: "node-a", provenance: { source_class: "canonical" }, identity: { physical_name: "node-a" } },
+      ],
+      relationships: [],
+    };
+    const artifactB = {
+      schema_version: "adaptive-homelab-atlas/v1",
+      generated_at: "2026-09-01T00:00:00Z",
+      producer: { name: "hlctl", version: "1.0.0" },
+      source: { repository: "homelab-foundation", commit: "same-commit", is_dirty: false, content_digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+      entities: [
+        { schema: "homelab.node/v1", kind: "node", id: "node-b", provenance: { source_class: "canonical" }, identity: { physical_name: "node-b" } },
+      ],
+      relationships: [],
+    };
+
+    renderPage();
+    setTextarea(JSON.stringify(artifactA));
+    clickRun();
+    await waitFor(() => expect(screen.getByText("Import complete")).toBeInTheDocument());
+
+    // Preview repair for Artifact A
+    clickPreviewRepair();
+    await waitFor(() => {
+      expect(screen.getByText(/Execute repair/i).closest("button")).not.toBeDisabled();
+    });
+
+    // Switch to Artifact B (identical metadata, different body)
+    setTextarea(JSON.stringify(artifactB));
+    clickRun();
+    await waitFor(() => expect(screen.getByText("Import complete")).toBeInTheDocument());
+
+    // S4: Execute repair MUST become disabled — preview is bound to Artifact A,
+    // current is B. The body fingerprint differs even though metadata is identical.
+    await waitFor(() => {
+      expect(screen.getByText(/Execute repair/i).closest("button")).toBeDisabled();
+    });
+
+    // Preview repair for Artifact B
+    clickPreviewRepair();
+    await waitFor(() => {
+      expect(screen.getByText(/Execute repair/i).closest("button")).not.toBeDisabled();
+    });
   });
 });

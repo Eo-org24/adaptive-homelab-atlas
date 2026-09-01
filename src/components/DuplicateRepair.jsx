@@ -254,6 +254,20 @@ export default function DuplicateRepair({ envelope, data, complete, disabled, bu
             </div>
           )}
 
+          {/* S3: Unverified attempted operations — NOT labeled as "Remapped records" */}
+          {report.unverifiedRemaps && report.unverifiedRemaps.length > 0 && (
+            <div>
+              <div className="text-xs font-medium text-amber-500 mb-1">Unverified attempted operations (database state uncertain)</div>
+              <ul className="space-y-0.5 max-h-32 overflow-auto">
+                {report.unverifiedRemaps.map((r, i) => (
+                  <li key={i} className="text-xs font-mono text-muted-foreground">
+                    · {r.entity} {r.id}: {r.fields.join(", ")}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {/* C4: Show failed operation details */}
           {report.failedOperation && (
             <div className="text-xs text-rose-500">

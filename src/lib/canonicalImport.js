@@ -275,19 +275,12 @@ export function planImport(envelope, data, options = {}) {
   // findings in report.ambiguous so operators/tests can identify the exact
   // entity, canonical identity / relationship_key, matching internal IDs, and reason.
   if (format === "unified") {
-    const depKeyIndex = buildDependencyKeyIndex(data || {});
-    depKeyIndex.forEach((records, key) => {
-      if (records.length > 1) {
-        ambiguous.push({
-          type: "dependency_identity",
-          entity: "Dependency",
-          relationship_key: key,
-          canonical_id: key,
-          matches: records.map((m) => ({ id: m.id })),
-          reason: "multiple existing canonical Dependency records share the same deterministic relationship_key",
-        });
-      }
-    });
+    // S1: Validate ALL existing canonical Dependencies for identity integrity.
+    // Catches missing/empty relationship_key (Case A), canonical_id !=
+    // relationship_key (Case B), and duplicate canonical_id across different
+    // relationship_keys (Case C). Any violation blocks before writes.
+    const depFindings = validateCanonicalDependencyIntegrity(data || {});
+    depFindings.forEach((f) => ambiguous.push(f));
 
     // R6: Ambiguous relationship endpoint identity for incoming relationships
     const plannedCidsSet = new Set(plans.map((p) => p.canonical_id));
@@ -352,9 +345,9 @@ export function preflightImport(envelope, data, options = {}) {
   // from the incoming snapshot (and would be stale-deleted) is still detected and
   // blocks before writes. See planImport for the structured ambiguity findings.
   if (plan.format === "unified") {
-    const depAmbiguous = plan.ambiguous.filter((a) => a.type === "dependency_identity");
+    const depAmbiguous = plan.ambiguous.filter((a) => a.type === "dependency_identity" || a.type === "dependency_integrity" || a.type === "dependency_canonical_id_identity");
     const endpointAmbiguous = plan.ambiguous.filter((a) => a.type === "endpoint_identity");
-    if (depAmbiguous.length > 0) reasons.push("ambiguous existing canonical dependency identity");
+    if (depAmbiguous.length > 0) reasons.push("ambiguous or malformed existing canonical dependency identity");
     if (endpointAmbiguous.length > 0) reasons.push("ambiguous existing relationship endpoint identity");
   }
 
@@ -539,6 +532,103 @@ function buildDependencyKeyIndex(data) {
     }
   });
   return byKey;
+}
+
+// S1: Validate ALL existing canonical Dependencies for identity integrity.
+// Required invariants:
+//   1. relationship_key must exist and be a non-empty string
+//   2. canonical_id must exist and be a non-empty string
+//   3. canonical_id MUST equal relationship_key
+//   4. one relationship_key may map to at most one persisted canonical Dependency
+//   5. one canonical_id may map to at most one persisted canonical Dependency
+// Any violation BLOCKS before writes. Never silently populate a missing
+// relationship_key, never silently rewrite canonical_id, never choose a keeper.
+// Returns structured findings for plan.ambiguous / report.ambiguous.
+function validateCanonicalDependencyIntegrity(data) {
+  const findings = [];
+  const canonicalDeps = (data.Dependency || []).filter((d) => d.source_kind === "canonical");
+
+  const byKey = new Map(); // relationship_key -> [records]
+  const byCid = new Map(); // canonical_id -> [records]
+
+  for (const d of canonicalDeps) {
+    const hasRelKey = d.relationship_key && typeof d.relationship_key === "string" && d.relationship_key.trim() !== "";
+    const hasCid = d.canonical_id && typeof d.canonical_id === "string" && d.canonical_id.trim() !== "";
+
+    // Case A: missing/empty relationship_key
+    if (!hasRelKey) {
+      findings.push({
+        type: "dependency_integrity",
+        entity: "Dependency",
+        internal_id: d.id,
+        canonical_id: d.canonical_id || "",
+        relationship_key: d.relationship_key || "",
+        reason: "canonical Dependency has missing or empty relationship_key",
+      });
+    }
+    // Case A: missing/empty canonical_id
+    if (!hasCid) {
+      findings.push({
+        type: "dependency_integrity",
+        entity: "Dependency",
+        internal_id: d.id,
+        canonical_id: d.canonical_id || "",
+        relationship_key: d.relationship_key || "",
+        reason: "canonical Dependency has missing or empty canonical_id",
+      });
+    }
+    // Case B: canonical_id !== relationship_key (only checkable if both exist)
+    if (hasRelKey && hasCid && d.canonical_id !== d.relationship_key) {
+      findings.push({
+        type: "dependency_integrity",
+        entity: "Dependency",
+        internal_id: d.id,
+        canonical_id: d.canonical_id,
+        relationship_key: d.relationship_key,
+        reason: "canonical Dependency canonical_id does not match relationship_key",
+      });
+    }
+
+    // Track for uniqueness checks (use whatever non-empty identifiers exist)
+    if (hasRelKey) {
+      if (!byKey.has(d.relationship_key)) byKey.set(d.relationship_key, []);
+      byKey.get(d.relationship_key).push(d);
+    }
+    if (hasCid) {
+      if (!byCid.has(d.canonical_id)) byCid.set(d.canonical_id, []);
+      byCid.get(d.canonical_id).push(d);
+    }
+  }
+
+  // Invariant 4: one relationship_key -> at most one canonical Dependency
+  byKey.forEach((records, key) => {
+    if (records.length > 1) {
+      findings.push({
+        type: "dependency_identity",
+        entity: "Dependency",
+        relationship_key: key,
+        canonical_id: key,
+        matches: records.map((r) => ({ id: r.id })),
+        reason: "multiple existing canonical Dependency records share the same relationship_key",
+      });
+    }
+  });
+
+  // Invariant 5: one canonical_id -> at most one canonical Dependency
+  byCid.forEach((records, cid) => {
+    if (records.length > 1) {
+      findings.push({
+        type: "dependency_canonical_id_identity",
+        entity: "Dependency",
+        canonical_id: cid,
+        relationship_key: records.map((r) => r.relationship_key).filter(Boolean).join(", "),
+        matches: records.map((r) => ({ id: r.id })),
+        reason: "multiple existing canonical Dependency records share the same canonical_id",
+      });
+    }
+  });
+
+  return findings;
 }
 
 // F7: Canonical-owned array fields compared by set semantics, not order.

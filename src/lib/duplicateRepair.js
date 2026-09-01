@@ -48,7 +48,7 @@ import {
   applyOperationRemaps,
 } from "@/lib/repairRefs";
 
-// F4: Set equality for verifying array remap persistence.
+// F4: Set equality for verifying array remap persistence (primitive ID arrays).
 function setEquals(a, b) {
   if (!Array.isArray(a) || !Array.isArray(b)) return false;
   if (a.length !== b.length) return false;
@@ -58,6 +58,48 @@ function setEquals(a, b) {
   return true;
 }
 
+// S2: Deep structural equality — object key order does not matter, array order DOES matter.
+// A real database reread deserializes fresh object instances; JavaScript Set
+// equality compares object identity, so structurally equal persisted operations
+// can be falsely classified as not applied. This helper compares by value.
+function deepEqual(a, b) {
+  if (a === b) return true;
+  if (a == null || b == null) return a === b;
+  if (typeof a !== typeof b) return false;
+  if (typeof a !== "object") return a === b;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b)) return false;
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (!deepEqual(a[i], b[i])) return false;
+    }
+    return true;
+  }
+  const ka = Object.keys(a).sort();
+  const kb = Object.keys(b).sort();
+  if (ka.length !== kb.length) return false;
+  for (const k of ka) {
+    if (!Object.prototype.hasOwnProperty.call(b, k)) return false;
+    if (!deepEqual(a[k], b[k])) return false;
+  }
+  return true;
+}
+
+// S2: Field-aware comparison for R3 remap verification.
+// For primitive reference arrays (related_nodes, eligible_execution_providers, etc.):
+//   set semantics (order-independent).
+// For PlannedChange.operations: deep structural equality (order matters).
+function remapFieldEquals(entity, field, persisted, intended) {
+  if (Array.isArray(intended)) {
+    if (entity === "PlannedChange" && field === "operations") {
+      return deepEqual(persisted || [], intended);
+    }
+    return setEquals(persisted || [], intended);
+  }
+  // Scalar — primitive value comparison
+  return persisted === intended;
+}
+
 // F2: Parse content_digest from source_note provenance metadata.
 function parseContentDigest(sourceNote) {
   if (!sourceNote || typeof sourceNote !== "string") return null;
@@ -65,11 +107,48 @@ function parseContentDigest(sourceNote) {
   return match ? match[1] : null;
 }
 
-// F5: Stable artifact preview key for binding preview to the current artifact.
+// F5/S4: Stable artifact preview key for binding preview to the current artifact.
+// S4: Also fingerprints the ACTUAL parsed envelope content — not just claimed
+// producer metadata. Two envelopes with identical schema_version/repository/
+// commit/content_digest but different entity/relationship bodies must produce
+// different keys so the operator-facing invariant ("the artifact being repaired
+// must receive its own dry-run preview") is guaranteed.
 export function artifactPreviewKey(envelope) {
   if (!envelope || !envelope.source) return "";
   const src = envelope.source;
-  return [envelope.schema_version || "", src.repository || "", src.commit || "", src.content_digest || ""].join("|");
+  const metaKey = [envelope.schema_version || "", src.repository || "", src.commit || "", src.content_digest || ""].join("|");
+  const bodyFingerprint = fingerprintEnvelopeBody(envelope);
+  return `${metaKey}|${bodyFingerprint}`;
+}
+
+// S4: Deterministic fingerprint of the actual parsed envelope content.
+// Uses stable JSON serialization (sorted object keys) of entities and relationships.
+function fingerprintEnvelopeBody(envelope) {
+  const parts = [];
+  if (Array.isArray(envelope.entities)) {
+    parts.push("entities:" + envelope.entities.map(stableSerialize).join(","));
+  }
+  if (Array.isArray(envelope.relationships)) {
+    parts.push("relationships:" + envelope.relationships.map(stableSerialize).join(","));
+  }
+  // Section-format arrays (legacy/backup-restore)
+  const sections = ["nodes", "workloads", "execution_environments", "dependencies", "decisions", "storage_devices", "network_devices", "storage_pools", "switch_ports"];
+  for (const section of sections) {
+    if (Array.isArray(envelope[section])) {
+      parts.push(section + ":" + envelope[section].map(stableSerialize).join(","));
+    }
+  }
+  return parts.join("|");
+}
+
+function stableSerialize(value) {
+  if (value === null || value === undefined) return "null";
+  if (typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) {
+    return "[" + value.map(stableSerialize).join(",") + "]";
+  }
+  const keys = Object.keys(value).sort();
+  return "{" + keys.map((k) => JSON.stringify(k) + ":" + stableSerialize(value[k])).join(",") + "}";
 }
 
 const KIND_TO_ENTITY = {
@@ -406,6 +485,7 @@ export async function runRepair(envelope, options = {}) {
     partial: false, recoveryRequired: false,
     phase: "", groups: [], remaps: [],
     deleted: [], remapped: [],
+    unverifiedRemaps: [],
     failedOperation: null,
     databaseStateUncertain: false,
     writesOccurred: false,
@@ -467,16 +547,17 @@ export async function runRepair(envelope, options = {}) {
     });
   }
 
-  const attemptedRemaps = []; // { entity, id, fields, intendedValues }
+  const attemptedRemaps = []; // { entity, id, fields, intendedValues, succeeded }
   for (const intended of intendedRemaps) {
     const { entity, id, payload } = intended;
     // R3: Track the intended operation BEFORE the await — a server may persist
     // the write and still throw to the caller. The failed operation must be
     // included in reconciliation so we can verify whether it actually persisted.
-    const attemptedEntry = { entity, id, fields: Object.keys(payload), intendedValues: payload };
+    const attemptedEntry = { entity, id, fields: Object.keys(payload), intendedValues: payload, succeeded: false };
     try {
       await adapter.update(entity, id, payload);
       report.writesOccurred = true;
+      attemptedEntry.succeeded = true;
       attemptedRemaps.push(attemptedEntry);
     } catch (e) {
       // R3: Include the FAILED intended operation in reconciliation — the
@@ -487,23 +568,34 @@ export async function runRepair(envelope, options = {}) {
       report.failedOperation = { phase: "remap", operation: `update ${entity} ${id}`, reason: e.message };
       try {
         const verifyData = await freshRead(adapter);
-        // R3: Compare ALL prior intended operations PLUS the failed operation
-        // with actual persistence. Classify as verified_applied or verified_not_applied.
+        // S2/S3: Field-aware comparison. Only verified persisted remaps go to
+        // report.remapped. PlannedChange.operations uses deep structural equality
+        // (order matters); primitive ID arrays use set semantics.
         report.remapped = attemptedRemaps.filter((r) => {
           const rec = (verifyData[r.entity] || []).find((x) => x.id === r.id);
           if (!rec) return false;
           for (const [field, val] of Object.entries(r.intendedValues)) {
-            if (Array.isArray(val)) { if (!setEquals(rec[field] || [], val)) return false; }
-            else { if (rec[field] !== val) return false; }
+            if (!remapFieldEquals(r.entity, field, rec[field], val)) return false;
           }
           return true;
         }).map(({ entity, id, fields }) => ({ entity, id, fields }));
         // R3: Set writesOccurred from verified persisted mutations, not fulfilled promises.
         if (report.remapped.length > 0) report.writesOccurred = true;
       } catch (e2) {
-        // R3: Complete reread cannot establish state — mark uncertain
+        // S3: Complete reread cannot establish state — mark uncertain.
+        // Do NOT add unverified operations to report.remapped — an attempted
+        // operation is NOT a verified remap. Prior successful operations (whose
+        // update call returned without throwing) remain in report.remapped as
+        // independently known. The failed operation is surfaced separately as
+        // unverified. writesOccurred is NOT set to true merely because an
+        // operation was attempted — only prior independently-known successes count.
         report.databaseStateUncertain = true;
-        report.remapped = attemptedRemaps.map(({ entity, id, fields }) => ({ entity, id, fields }));
+        report.remapped = attemptedRemaps
+          .filter((r) => r.succeeded)
+          .map(({ entity, id, fields }) => ({ entity, id, fields }));
+        report.unverifiedRemaps = attemptedRemaps
+          .filter((r) => !r.succeeded)
+          .map(({ entity, id, fields }) => ({ entity, id, fields }));
       }
       // R3: Deletion must NOT begin after a remap-phase error.
       return report;
