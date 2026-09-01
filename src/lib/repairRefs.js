@@ -89,25 +89,25 @@ export function resolveRefTarget(desc, rec) {
   return null;
 }
 
-// Check if a PlannedChange.operations array contains any references to deleted IDs
-// that point at repairable entities. Returns a list of remap descriptors for
-// operations that reference deleted IDs, or null if an unsafe/unknown reference
-// is found (which should block the group).
+// R5: Plan operation remaps and collect structured unsafe findings.
+// Returns { unsafe: [...], remaps: [...] } — ALWAYS, never null.
 //
-// Each returned descriptor: { opIndex, field, target, oldValue, newValue }
-// F3: Recursively scan a value for strings exactly matching a deleted internal ID.
-// Used to detect candidate-deleted IDs in unknown structured operation fields.
-function scanForDeletedIds(value, deletedIds) {
-  if (value == null) return false;
-  if (typeof value === "string") return deletedIds.has(value);
-  if (Array.isArray(value)) return value.some((v) => scanForDeletedIds(v, deletedIds));
-  if (typeof value === "object") return Object.values(value).some((v) => scanForDeletedIds(v, deletedIds));
-  return false;
-}
-
+// unsafe entries: { deletedId, reason, opIndex, fieldPath }
+//   - deletedId: the specific candidate-deleted internal ID that is implicated.
+//     null ONLY when it is genuinely impossible to identify which deletion is
+//     implicated (global block).
+//   - reason: human-readable explanation.
+//   - opIndex: index into the operations array.
+//   - fieldPath: the field name where the unsafe reference was found.
+//
+// remaps entries: { opIndex, field, target, oldValue, newValue }
+//
+// The caller uses unsafe[].deletedId to block ONLY the duplicate groups whose
+// deletion set contains that ID — not globally block all groups.
 export function planOperationRemaps(operations, deleteIdToKeeper, deleteIdToEntity) {
   const remaps = [];
-  if (!Array.isArray(operations)) return remaps;
+  const unsafe = [];
+  if (!Array.isArray(operations)) return { unsafe, remaps };
 
   const deletedIds = new Set(deleteIdToKeeper.keys());
   // Known fields (ID fields + their type fields) — not scanned for unknown deleted IDs
@@ -127,42 +127,81 @@ export function planOperationRemaps(operations, deleteIdToKeeper, deleteIdToEnti
         if (!desc.target) continue;
         if (!REPAIRABLE_ENTITIES.has(desc.target)) continue;
         if (deleteIdToEntity.has(val)) {
-          // F3: Type mismatch — candidate-deleted ID whose entity kind conflicts with declared target → BLOCK
-          if (deleteIdToEntity.get(val) !== desc.target) return null;
-          if (!deleteIdToKeeper.has(val)) return null;
+          // F3: Type mismatch — candidate-deleted ID whose entity kind conflicts with declared target
+          if (deleteIdToEntity.get(val) !== desc.target) {
+            unsafe.push({ deletedId: val, reason: `type mismatch: ${desc.field} expects ${desc.target} but deleted ID belongs to ${deleteIdToEntity.get(val)}`, opIndex: i, fieldPath: desc.field });
+            continue;
+          }
+          if (!deleteIdToKeeper.has(val)) {
+            unsafe.push({ deletedId: val, reason: `deleted ID has no keeper mapping`, opIndex: i, fieldPath: desc.field });
+            continue;
+          }
           remaps.push({ opIndex: i, field: desc.field, target: desc.target, oldValue: val, newValue: deleteIdToKeeper.get(val) });
         }
       } else if (desc.resolve === "typed") {
         const typeVal = op[desc.typeField];
         if (!typeVal) {
-          if (deleteIdToEntity.has(val)) return null;
+          if (deleteIdToEntity.has(val)) {
+            unsafe.push({ deletedId: val, reason: `typed field ${desc.field} has no ${desc.typeField} to determine target entity`, opIndex: i, fieldPath: desc.field });
+          }
           continue;
         }
         const target = TYPE_FIELD_TO_ENTITY[desc.typeField] ? TYPE_FIELD_TO_ENTITY[desc.typeField](typeVal) : null;
         if (!target) {
-          if (deleteIdToEntity.has(val)) return null;
+          if (deleteIdToEntity.has(val)) {
+            unsafe.push({ deletedId: val, reason: `unresolvable type "${typeVal}" for ${desc.typeField}`, opIndex: i, fieldPath: desc.field });
+          }
           continue;
         }
         if (!REPAIRABLE_ENTITIES.has(target)) continue;
         if (deleteIdToEntity.has(val)) {
-          // F3: Type mismatch — candidate-deleted ID whose entity kind conflicts with declared type → BLOCK
-          if (deleteIdToEntity.get(val) !== target) return null;
-          if (!deleteIdToKeeper.has(val)) return null;
+          // F3: Type mismatch — candidate-deleted ID whose entity kind conflicts with declared type
+          if (deleteIdToEntity.get(val) !== target) {
+            unsafe.push({ deletedId: val, reason: `type mismatch: ${desc.field} expects ${target} but deleted ID belongs to ${deleteIdToEntity.get(val)}`, opIndex: i, fieldPath: desc.field });
+            continue;
+          }
+          if (!deleteIdToKeeper.has(val)) {
+            unsafe.push({ deletedId: val, reason: `deleted ID has no keeper mapping`, opIndex: i, fieldPath: desc.field });
+            continue;
+          }
           remaps.push({ opIndex: i, field: desc.field, target, oldValue: val, newValue: deleteIdToKeeper.get(val) });
         }
       }
     }
 
-    // F3: Second pass — scan remaining unknown structured fields conservatively.
-    // If any unknown field/value contains a string exactly equal to an internal ID
-    // scheduled for deletion, block the group (fail closed). Handle nested arrays/objects.
+    // R5: Second pass — scan remaining unknown structured fields conservatively.
+    // Collect EVERY candidate-deleted ID encountered in unknown fields, so the
+    // caller can block ONLY the owning groups rather than globally blocking.
     for (const key of Object.keys(op)) {
       if (knownFields.has(key)) continue;
-      if (scanForDeletedIds(op[key], deletedIds)) return null;
+      const foundIds = collectDeletedIds(op[key], deletedIds);
+      for (const fid of foundIds) {
+        unsafe.push({ deletedId: fid, reason: `unknown structured field "${key}" contains deleted ID`, opIndex: i, fieldPath: key });
+      }
     }
   }
 
-  return remaps;
+  return { unsafe, remaps };
+}
+
+// R5: Collect ALL candidate-deleted IDs found in a value (not just a boolean).
+// Recursively scans nested arrays/objects for strings matching deleted internal IDs.
+function collectDeletedIds(value, deletedIds) {
+  const found = [];
+  if (value == null) return found;
+  if (typeof value === "string") {
+    if (deletedIds.has(value)) found.push(value);
+    return found;
+  }
+  if (Array.isArray(value)) {
+    for (const v of value) found.push(...collectDeletedIds(v, deletedIds));
+    return found;
+  }
+  if (typeof value === "object") {
+    for (const v of Object.values(value)) found.push(...collectDeletedIds(v, deletedIds));
+    return found;
+  }
+  return found;
 }
 
 // Apply planned operation remaps to an operations array, returning a new array.

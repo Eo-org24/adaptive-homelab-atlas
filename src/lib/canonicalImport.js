@@ -267,6 +267,68 @@ export function planImport(envelope, data, options = {}) {
     const action = !existing ? "create" : changed(it.incoming, existing, it.entity) ? "update" : "unchanged";
     plans.push({ ...it, existing, action });
   });
+  // R1/R6: Detect ambiguous existing canonical dependency identity across ALL
+  // existing canonical Dependencies (not just incoming keys). Any relationship_key
+  // with multiple records is ambiguous and must BLOCK — never silently choose via
+  // Map last-wins during stale reconciliation. Also detect ambiguous relationship
+  // endpoint identity for incoming relationships. Both surface as structured
+  // findings in report.ambiguous so operators/tests can identify the exact
+  // entity, canonical identity / relationship_key, matching internal IDs, and reason.
+  if (format === "unified") {
+    const depKeyIndex = buildDependencyKeyIndex(data || {});
+    depKeyIndex.forEach((records, key) => {
+      if (records.length > 1) {
+        ambiguous.push({
+          type: "dependency_identity",
+          entity: "Dependency",
+          relationship_key: key,
+          canonical_id: key,
+          matches: records.map((m) => ({ id: m.id })),
+          reason: "multiple existing canonical Dependency records share the same deterministic relationship_key",
+        });
+      }
+    });
+
+    // R6: Ambiguous relationship endpoint identity for incoming relationships
+    const plannedCidsSet = new Set(plans.map((p) => p.canonical_id));
+    relationships.forEach((r) => {
+      const s = parseTypedId(r.source), t = parseTypedId(r.target);
+      if (!s || !t) return;
+      if (!plannedCidsSet.has(r.source)) {
+        const srcEntity = KIND_TO_ENTITY[s.kind];
+        if (srcEntity) {
+          const matches = canonicalMatches(srcEntity, r.source, index);
+          if (matches.length > 1) {
+            ambiguous.push({
+              type: "endpoint_identity",
+              entity: srcEntity,
+              canonical_id: r.source,
+              relationship_type: r.type,
+              matches: matches.map((m) => ({ id: m.id })),
+              reason: `incoming relationship endpoint ${r.source} has multiple existing records`,
+            });
+          }
+        }
+      }
+      if (!plannedCidsSet.has(r.target)) {
+        const tgtEntity = KIND_TO_ENTITY[t.kind];
+        if (tgtEntity) {
+          const matches = canonicalMatches(tgtEntity, r.target, index);
+          if (matches.length > 1) {
+            ambiguous.push({
+              type: "endpoint_identity",
+              entity: tgtEntity,
+              canonical_id: r.target,
+              relationship_type: r.type,
+              matches: matches.map((m) => ({ id: m.id })),
+              reason: `incoming relationship endpoint ${r.target} has multiple existing records`,
+            });
+          }
+        }
+      }
+    });
+  }
+
   const capability_findings = collectCapabilityFindings(items);
   return { valid: true, errors: [], items, inputErrors, conflicts, ambiguous, plans, relationships, capability_findings, lookups, index, format };
 }
@@ -283,37 +345,20 @@ export function preflightImport(envelope, data, options = {}) {
   if (plan.conflicts.length) reasons.push("duplicate canonical IDs in incoming snapshot");
   if (plan.ambiguous.length) reasons.push("ambiguous existing canonical identity");
 
-  // F1: Detect ambiguous existing canonical dependency identity and ambiguous
-  // relationship endpoint identity. These must BLOCK before writes — never
-  // silently choose a keeper or use buildLookups() last-wins resolution.
-  const plannedCids = new Set(plan.plans.map((p) => p.canonical_id));
+  // R1: Ambiguous canonical dependency identity and ambiguous relationship endpoint
+  // identity are now collected in planImport across ALL existing canonical
+  // Dependencies (not just incoming keys) and ALL incoming relationship endpoints.
+  // This closes the stale-dependency hole: an ambiguous dependency that is absent
+  // from the incoming snapshot (and would be stale-deleted) is still detected and
+  // blocks before writes. See planImport for the structured ambiguity findings.
   if (plan.format === "unified") {
-    const depKeyIndex = buildDependencyKeyIndex(data);
-    let ambiguousDeps = 0;
-    let ambiguousEndpoints = 0;
-    plan.relationships.forEach((r) => {
-      const s = parseTypedId(r.source), t = parseTypedId(r.target);
-      if (!s || !t) return;
-      // depends_on: check for multiple existing canonical Dependencies with same key
-      if (r.type === "depends_on") {
-        const relKey = dependencyRelationshipKey(r.source, r.target);
-        const existing = depKeyIndex.get(relKey) || [];
-        if (existing.length > 1) ambiguousDeps++;
-      }
-      // Endpoints: if not being created in this import, check for multiple existing matches
-      if (!plannedCids.has(r.source)) {
-        const srcEntity = KIND_TO_ENTITY[s.kind];
-        if (srcEntity && canonicalMatches(srcEntity, r.source, plan.index).length > 1) ambiguousEndpoints++;
-      }
-      if (!plannedCids.has(r.target)) {
-        const tgtEntity = KIND_TO_ENTITY[t.kind];
-        if (tgtEntity && canonicalMatches(tgtEntity, r.target, plan.index).length > 1) ambiguousEndpoints++;
-      }
-    });
-    if (ambiguousDeps > 0) reasons.push("ambiguous existing canonical dependency identity");
-    if (ambiguousEndpoints > 0) reasons.push("ambiguous existing relationship endpoint identity");
+    const depAmbiguous = plan.ambiguous.filter((a) => a.type === "dependency_identity");
+    const endpointAmbiguous = plan.ambiguous.filter((a) => a.type === "endpoint_identity");
+    if (depAmbiguous.length > 0) reasons.push("ambiguous existing canonical dependency identity");
+    if (endpointAmbiguous.length > 0) reasons.push("ambiguous existing relationship endpoint identity");
   }
 
+  const plannedCids = new Set(plan.plans.map((p) => p.canonical_id));
   if (!allowPartialRefs) {
     let unresolved = 0;
     if (plan.format === "unified") {

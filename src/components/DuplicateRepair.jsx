@@ -69,14 +69,22 @@ export default function DuplicateRepair({ envelope, data, complete, disabled, bu
       }
 
       setReport(r);
-      // F8: Separate mutation from page-dataset refresh. If the mutation succeeded
-      // but the refresh fails, show a distinct warning — do NOT label it "Repair failed".
+      // F8/R7: Separate mutation from page-dataset refresh. If the mutation
+      // succeeded but the refresh fails, show a distinct warning. The wording
+      // MUST be honest about the mutation result: if the repair was partial or
+      // recovery-required, the warning MUST NOT say "the repair itself succeeded"
+      // — instead it says the mutation result above is authoritative, it is
+      // partial/recovery-required, and the page refresh additionally failed.
       if (!r.blocked || r.remapped.length > 0 || r.deleted.length > 0) {
         if (onAfterRepair) {
           try {
             await onAfterRepair();
           } catch (e) {
-            setRefreshError(`Page dataset refresh failed: ${e.message}. The repair itself succeeded — please reload the page to see updated data.`);
+            if (r.partial || r.recoveryRequired) {
+              setRefreshError(`Page dataset refresh failed: ${e.message}. The repair result above is authoritative (partial/recovery-required). Please reload or retry refresh before trusting the displayed page dataset.`);
+            } else {
+              setRefreshError(`Page dataset refresh failed: ${e.message}. The repair itself succeeded — please reload the page to see updated data.`);
+            }
           }
         }
       }

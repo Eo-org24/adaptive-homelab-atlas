@@ -22,6 +22,17 @@ const EXPECTED_CIDS = [
   "workload:ssd-intake",
 ];
 
+// R4: Exact V1 artifact provenance required for repair eligibility.
+// Manually created records must carry the same provenance that the V1 importer
+// would have persisted: source_generated_at = envelope.generated_at, and
+// source_note containing content_digest=<artifact digest>.
+const ARTIFACT_GENERATED_AT = ARTIFACT.generated_at;
+const ARTIFACT_DIGEST = ARTIFACT.source.content_digest;
+const PROV = {
+  source_generated_at: ARTIFACT_GENERATED_AT,
+  source_note: `content_digest=${ARTIFACT_DIGEST}`,
+};
+
 // Count records per canonical_id across all entity kinds in the store.
 function countByCanonical(store) {
   const counts = {};
@@ -104,13 +115,13 @@ describe("§7: duplicate-repair dry-run", () => {
     const a = adapter.create("Node", {
       canonical_id: "node:pve7", hostname: "pve7", source_kind: "canonical",
       source_repository: INCIDENT_REPO, source_commit: INCIDENT_COMMIT,
-      lifecycle_state: "active",
+      lifecycle_state: "active", ...PROV,
     });
     // Simulate async timing: second record has slightly later created_date
     const b = adapter.create("Node", {
       canonical_id: "node:pve7", hostname: "pve7", source_kind: "canonical",
       source_repository: INCIDENT_REPO, source_commit: INCIDENT_COMMIT,
-      lifecycle_state: "active",
+      lifecycle_state: "active", ...PROV,
     });
 
     const data = { Node: Array.from(adapter._store.Node.values()) };
@@ -136,6 +147,7 @@ describe("§8: exact duplicate repair", () => {
       const base = {
         canonical_id: cid, source_kind: "canonical",
         source_repository: INCIDENT_REPO, source_commit: INCIDENT_COMMIT,
+        ...PROV,
       };
       if (entity === "Node") base.hostname = id;
       if (entity === "ExecutionEnvironment") { base.name = id; base.type = "unknown"; }
@@ -162,11 +174,11 @@ describe("§9: heterogeneous duplicate group blocks repair", () => {
     const adapter = createMemoryAdapter();
     adapter.create("Node", {
       canonical_id: "node:pve7", hostname: "pve7", lifecycle_state: "active",
-      source_kind: "canonical", source_repository: INCIDENT_REPO, source_commit: INCIDENT_COMMIT,
+      source_kind: "canonical", source_repository: INCIDENT_REPO, source_commit: INCIDENT_COMMIT, ...PROV,
     });
     adapter.create("Node", {
       canonical_id: "node:pve7", hostname: "pve7", lifecycle_state: "degraded", // different!
-      source_kind: "canonical", source_repository: INCIDENT_REPO, source_commit: INCIDENT_COMMIT,
+      source_kind: "canonical", source_repository: INCIDENT_REPO, source_commit: INCIDENT_COMMIT, ...PROV,
     });
 
     const data = { Node: Array.from(adapter._store.Node.values()) };
@@ -184,11 +196,11 @@ describe("§10: local override blocks unsafe repair", () => {
     const adapter = createMemoryAdapter();
     adapter.create("Node", {
       canonical_id: "node:pve7", hostname: "pve7", lifecycle_state: "active",
-      source_kind: "canonical", source_repository: INCIDENT_REPO, source_commit: INCIDENT_COMMIT,
+      source_kind: "canonical", source_repository: INCIDENT_REPO, source_commit: INCIDENT_COMMIT, ...PROV,
     });
     adapter.create("Node", {
       canonical_id: "node:pve7", hostname: "pve7", lifecycle_state: "active",
-      source_kind: "canonical", source_repository: INCIDENT_REPO, source_commit: INCIDENT_COMMIT,
+      source_kind: "canonical", source_repository: INCIDENT_REPO, source_commit: INCIDENT_COMMIT, ...PROV,
       field_provenance: JSON.stringify({ lifecycle_state: { local: "maintenance" } }),
     });
 
@@ -237,17 +249,17 @@ describe("§12: reference remapping before delete", () => {
     // Create duplicate execution-provider:tools1
     const keeper = await adapter.create("ExecutionEnvironment", {
       canonical_id: "execution-provider:tools1", name: "tools1", type: "lxc", runtime_kind: "lxc",
-      source_kind: "canonical", source_repository: INCIDENT_REPO, source_commit: INCIDENT_COMMIT,
+      source_kind: "canonical", source_repository: INCIDENT_REPO, source_commit: INCIDENT_COMMIT, ...PROV,
     });
     const dup = await adapter.create("ExecutionEnvironment", {
       canonical_id: "execution-provider:tools1", name: "tools1", type: "lxc", runtime_kind: "lxc",
-      source_kind: "canonical", source_repository: INCIDENT_REPO, source_commit: INCIDENT_COMMIT,
+      source_kind: "canonical", source_repository: INCIDENT_REPO, source_commit: INCIDENT_COMMIT, ...PROV,
     });
 
     // Create a workload referencing the DUPLICATE id (not the keeper)
     const wl = await adapter.create("Workload", {
       canonical_id: "workload:ssd-intake", name: "SSD Intake", category: "unknown",
-      source_kind: "canonical", source_repository: INCIDENT_REPO, source_commit: INCIDENT_COMMIT,
+      source_kind: "canonical", source_repository: INCIDENT_REPO, source_commit: INCIDENT_COMMIT, ...PROV,
       eligible_execution_providers: [dup.id],
     });
 
@@ -266,11 +278,11 @@ describe("§12: reference remapping before delete", () => {
     // Create duplicate workloads
     const keeper = await adapter.create("Workload", {
       canonical_id: "workload:ssd-intake", name: "SSD Intake", category: "unknown",
-      source_kind: "canonical", source_repository: INCIDENT_REPO, source_commit: INCIDENT_COMMIT,
+      source_kind: "canonical", source_repository: INCIDENT_REPO, source_commit: INCIDENT_COMMIT, ...PROV,
     });
     const dup = await adapter.create("Workload", {
       canonical_id: "workload:ssd-intake", name: "SSD Intake", category: "unknown",
-      source_kind: "canonical", source_repository: INCIDENT_REPO, source_commit: INCIDENT_COMMIT,
+      source_kind: "canonical", source_repository: INCIDENT_REPO, source_commit: INCIDENT_COMMIT, ...PROV,
     });
 
     // Create a Dependency referencing the duplicate
@@ -278,7 +290,7 @@ describe("§12: reference remapping before delete", () => {
       source_type: "workload", source_id: dup.id,
       target_type: "workload", target_id: dup.id,
       kind: "unknown", relationship_key: "workload:ssd-intake|depends_on|workload:ssd-intake",
-      source_kind: "canonical", source_repository: INCIDENT_REPO, source_commit: INCIDENT_COMMIT,
+      source_kind: "canonical", source_repository: INCIDENT_REPO, source_commit: INCIDENT_COMMIT, ...PROV,
     });
 
     const r = await runRepair(ARTIFACT, { adapter });

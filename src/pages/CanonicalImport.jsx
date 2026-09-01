@@ -78,13 +78,21 @@ export default function CanonicalImport() {
     try {
       const r = await runImport(env, data, { complete });
       setReport(r); setPhase("imported"); setConflicts(overrideConflicts(env, data));
-      // F8: Separate mutation from page-dataset refresh. If the mutation succeeded
-      // but the refresh fails, show a distinct warning — do NOT label it "Import failed".
+      // F8/R7: Separate mutation from page-dataset refresh. If the mutation
+      // succeeded but the refresh fails, show a distinct warning. The wording
+      // MUST be honest about the mutation result: if the import was partial or
+      // recovery-required, the warning MUST NOT say "the import itself succeeded"
+      // — instead it says the mutation result above is authoritative, it is
+      // partial/recovery-required, and the page refresh additionally failed.
       if (!r.blocked) {
         try {
           await refresh();
         } catch (e) {
-          setRefreshError(`Page dataset refresh failed: ${e.message}. The import itself succeeded — please reload the page to see updated data.`);
+          if (r.partial || r.sync_state === "partial_failure") {
+            setRefreshError(`Page dataset refresh failed: ${e.message}. The import result above is authoritative (partial/recovery-required). Please reload or retry refresh before trusting the displayed page dataset.`);
+          } else {
+            setRefreshError(`Page dataset refresh failed: ${e.message}. The import itself succeeded — please reload the page to see updated data.`);
+          }
         }
       }
     } catch (e) {

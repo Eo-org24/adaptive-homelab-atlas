@@ -146,13 +146,19 @@ function checkGroupEligibility(members, expectedCommit, expectedRepo, entity, ar
     if (m.source_commit !== expectedCommit)
       return { eligible: false, reason: `member ${m.id} has source_commit="${m.source_commit}" (expected "${expectedCommit}")` };
 
-    // F2: Verify source_generated_at matches the loaded artifact (when present in stored record)
-    if (m.source_generated_at && expectedGeneratedAt && m.source_generated_at !== expectedGeneratedAt)
+    // R4: Require EXACT V1 artifact provenance for destructive repair.
+    // source_generated_at MUST be present and exactly match the loaded artifact.
+    // Do not infer that repo+commit alone proves the exact artifact.
+    if (!m.source_generated_at)
+      return { eligible: false, reason: `member ${m.id} is missing source_generated_at (required for exact-artifact authorization)` };
+    if (m.source_generated_at !== expectedGeneratedAt)
       return { eligible: false, reason: `member ${m.id} has source_generated_at="${m.source_generated_at}" (expected "${expectedGeneratedAt}")` };
 
-    // F2: Verify content_digest from source_note matches the loaded artifact
+    // R4: content_digest MUST be parseable from source_note and exactly match.
     const storedDigest = parseContentDigest(m.source_note);
-    if (storedDigest && expectedDigest && storedDigest !== expectedDigest)
+    if (!storedDigest)
+      return { eligible: false, reason: `member ${m.id} has no parseable content_digest in source_note (required for exact-artifact authorization)` };
+    if (storedDigest !== expectedDigest)
       return { eligible: false, reason: `member ${m.id} has content_digest="${storedDigest}" (expected "${expectedDigest}")` };
 
     // Check for Atlas-local overrides (field_provenance with local layer)
@@ -219,6 +225,22 @@ function planGlobalReferenceRemaps(deleteIdToKeeper, deleteIdToEntity, liveData)
         const arr = rec[desc.field];
         if (!Array.isArray(arr) || arr.length === 0) continue;
         if (!arr.some((v) => deletedIds.has(v))) continue;
+        // R2: Type safety for array references — for each array element matching
+        // a deleted ID, verify the actual deleted entity kind matches the
+        // descriptor's declared target. A cross-type reference is unsafe: do
+        // NOT remap, mark the specific deleted ID unsafe, and block the group
+        // that owns that ID.
+        const target = resolveRefTarget(desc, rec);
+        let typeMismatch = false;
+        if (target && REPAIRABLE_ENTITIES.has(target)) {
+          for (const v of arr) {
+            if (deletedIds.has(v) && deleteIdToEntity.get(v) !== target) {
+              unsafeRefs.push({ deletedId: v, reason: `type mismatch: ${desc.entity}.${desc.field} expects ${target} but deleted ID belongs to ${deleteIdToEntity.get(v)}` });
+              typeMismatch = true;
+            }
+          }
+        }
+        if (typeMismatch) continue; // skip remap — the owning group will be blocked
         // Map every element through the global mapping, then deduplicate
         const newArr = [];
         const seen = new Set();
@@ -254,11 +276,12 @@ function planGlobalReferenceRemaps(deleteIdToKeeper, deleteIdToEntity, liveData)
     if (deletedIds.has(rec.id)) continue;
     const ops = rec.operations;
     if (!Array.isArray(ops) || ops.length === 0) continue;
-    const opRemaps = planOperationRemaps(ops, deleteIdToKeeper, deleteIdToEntity);
-    if (opRemaps === null) {
-      // Unsafe reference found in operations — block
-      unsafeRefs.push({ deletedId: null, reason: `unsafe/unknown structured reference in ${rec.id}.operations` });
-      continue;
+    // R5: planOperationRemaps now returns { unsafe, remaps } — never null.
+    // Unsafe findings carry the specific candidate-deleted ID so the caller
+    // can block ONLY the owning group, not globally block all groups.
+    const { unsafe: opUnsafe, remaps: opRemaps } = planOperationRemaps(ops, deleteIdToKeeper, deleteIdToEntity);
+    for (const u of opUnsafe) {
+      unsafeRefs.push({ deletedId: u.deletedId, reason: `unsafe structured reference in ${rec.id}.operations[${u.opIndex}].${u.fieldPath}: ${u.reason}` });
     }
     if (opRemaps.length > 0) {
       const newOps = applyOperationRemaps(ops, opRemaps);
@@ -447,18 +470,25 @@ export async function runRepair(envelope, options = {}) {
   const attemptedRemaps = []; // { entity, id, fields, intendedValues }
   for (const intended of intendedRemaps) {
     const { entity, id, payload } = intended;
+    // R3: Track the intended operation BEFORE the await — a server may persist
+    // the write and still throw to the caller. The failed operation must be
+    // included in reconciliation so we can verify whether it actually persisted.
+    const attemptedEntry = { entity, id, fields: Object.keys(payload), intendedValues: payload };
     try {
       await adapter.update(entity, id, payload);
       report.writesOccurred = true;
-      attemptedRemaps.push({ entity, id, fields: Object.keys(payload), intendedValues: payload });
+      attemptedRemaps.push(attemptedEntry);
     } catch (e) {
-      // F4: An update failed — stop before deletion. Fresh-read to verify state.
+      // R3: Include the FAILED intended operation in reconciliation — the
+      // server may have persisted the write before throwing.
+      attemptedRemaps.push(attemptedEntry);
       report.partial = true;
       report.recoveryRequired = true;
       report.failedOperation = { phase: "remap", operation: `update ${entity} ${id}`, reason: e.message };
       try {
         const verifyData = await freshRead(adapter);
-        // Reconcile: verify each attempted remap against actual persisted state
+        // R3: Compare ALL prior intended operations PLUS the failed operation
+        // with actual persistence. Classify as verified_applied or verified_not_applied.
         report.remapped = attemptedRemaps.filter((r) => {
           const rec = (verifyData[r.entity] || []).find((x) => x.id === r.id);
           if (!rec) return false;
@@ -468,10 +498,14 @@ export async function runRepair(envelope, options = {}) {
           }
           return true;
         }).map(({ entity, id, fields }) => ({ entity, id, fields }));
+        // R3: Set writesOccurred from verified persisted mutations, not fulfilled promises.
+        if (report.remapped.length > 0) report.writesOccurred = true;
       } catch (e2) {
+        // R3: Complete reread cannot establish state — mark uncertain
         report.databaseStateUncertain = true;
         report.remapped = attemptedRemaps.map(({ entity, id, fields }) => ({ entity, id, fields }));
       }
+      // R3: Deletion must NOT begin after a remap-phase error.
       return report;
     }
   }
@@ -490,14 +524,34 @@ export async function runRepair(envelope, options = {}) {
           entity: group.entity,
           id: del.id,
         });
+        // R3: Set writesOccurred for successful deletes even when there were
+        // zero reference remaps — a deletion IS a persisted mutation.
+        report.writesOccurred = true;
       } catch (e) {
-        // C4: Some deletes may have succeeded, this one failed
+        // R3: A delete request can delete successfully and still throw to the
+        // caller. Fresh-read the affected entity data to determine whether the
+        // failed ID still exists. Report successful/failed deletion according
+        // to actual persisted state where it can be established.
         report.partial = true;
         report.recoveryRequired = true;
         report.failedOperation = { phase: "delete", operation: `delete ${group.canonical_id} ${del.id}`, reason: e.message };
-        // Attempt fresh read to reconcile
-        try { await freshRead(adapter); }
-        catch (e2) { report.databaseStateUncertain = true; }
+        try {
+          const verifyData = await freshRead(adapter);
+          // R3: Determine whether the failed ID still exists in the database
+          const stillExists = (verifyData[group.entity] || []).some((r) => r.id === del.id);
+          if (!stillExists) {
+            // R3: The delete actually succeeded — report it and set writesOccurred
+            report.deleted.push({
+              canonical_id: group.canonical_id,
+              entity: group.entity,
+              id: del.id,
+            });
+            report.writesOccurred = true;
+          }
+        } catch (e2) {
+          // R3: Complete reread cannot establish state — mark uncertain
+          report.databaseStateUncertain = true;
+        }
         return report;
       }
     }
