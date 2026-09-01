@@ -1,9 +1,11 @@
-import React, { useState, useRef, useCallback } from "react";
+import React, { useState, useRef, useCallback, useMemo } from "react";
 import { useArchitectureDataset } from "@/hooks/useArchitectureDataset";
 import { validateEnvelope, previewImport, runImport, SAMPLE_ENVELOPE, GOLDEN_CROSSOVER, COMPREHENSIVE_V1_FIXTURE, REAL_CROSSOVER_ARTIFACT } from "@/lib/canonicalImport";
 import { overrideConflicts } from "@/lib/provenance";
 import SyncStatusPanel from "@/components/SyncStatusPanel";
 import DuplicateRepair from "@/components/DuplicateRepair";
+import LegacyRecovery from "@/components/LegacyRecovery";
+import { detectLocalNameCollisions } from "@/lib/canonicalMutation";
 import { PageHeader, Card } from "@/components/ui-bits";
 import { Upload, Play, FileWarning, CheckCircle2, AlertTriangle, XCircle, Loader2, Database, RefreshCw } from "lucide-react";
 
@@ -112,6 +114,7 @@ export default function CanonicalImport() {
   const c = report?.counts || {};
   const syncState = report?.sync_state || "";
   const incomplete = !loading && !complete;
+  const collisions = useMemo(() => (complete ? detectLocalNameCollisions(data) : []), [data, complete]);
 
   return (
     <div className="p-6 max-w-[1200px] mx-auto space-y-5">
@@ -139,6 +142,25 @@ export default function CanonicalImport() {
                   {Object.entries(errors).map(([k, v]) => <li key={k}>· {k}: {v}</li>)}
                 </ul>
               )}
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {collisions.length > 0 && (
+        <Card className="p-4 border-amber-500/30 bg-amber-500/5">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
+            <div>
+              <div className="text-sm font-medium text-amber-600 dark:text-amber-400">LOCAL_NAME_COLLISION ({collisions.length})</div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Atlas-local records share display names with canonical records. Name equality is NOT identity equality — canonical synchronization is not blocked.
+              </p>
+              <ul className="text-[11px] text-muted-foreground mt-1 space-y-0.5">
+                {collisions.slice(0, 5).map((c, i) => (
+                  <li key={i}>· {c.entity}: local "{c.localName}" ({c.localId.slice(0, 12)}…) collides with canonical {c.canonicalCid}</li>
+                ))}
+              </ul>
             </div>
           </div>
         </Card>
@@ -232,6 +254,16 @@ export default function CanonicalImport() {
 
       <DuplicateRepair
         envelope={parsedEnv}
+        data={data}
+        complete={complete}
+        disabled={busy || loading || incomplete}
+        busy={busy}
+        acquireLock={acquireLock}
+        releaseLock={releaseLock}
+        onAfterRepair={refresh}
+      />
+
+      <LegacyRecovery
         data={data}
         complete={complete}
         disabled={busy || loading || incomplete}

@@ -272,7 +272,7 @@ export function selectKeeper(members) {
 }
 
 // ---- C1: Build ONE global deletedId → keeperId mapping from ALL eligible groups ----
-function buildGlobalRemapMap(readyGroups) {
+export function buildGlobalRemapMap(readyGroups) {
   const deleteIdToKeeper = new Map(); // deleted internal ID → keeper internal ID
   const deleteIdToEntity = new Map(); // deleted internal ID → entity kind
   for (const g of readyGroups) {
@@ -289,7 +289,7 @@ function buildGlobalRemapMap(readyGroups) {
 // A field referencing deleted IDs from multiple groups receives ALL replacements.
 // Records scheduled for deletion are excluded from remapping.
 // Returns { remaps, unsafeRefs } where unsafeRefs blocks the corresponding groups.
-function planGlobalReferenceRemaps(deleteIdToKeeper, deleteIdToEntity, liveData) {
+export function planGlobalReferenceRemaps(deleteIdToKeeper, deleteIdToEntity, liveData) {
   const remaps = [];
   const unsafeRefs = []; // { deletedId, reason }
 

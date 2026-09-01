@@ -28,6 +28,7 @@ import { ENTITY_KINDS, REF_FIELDS, DEP_TYPE_MAP, refFieldNames, buildLookups, re
 import { loadEntityComplete } from "@/lib/datasetLoader";
 import { FIXTURE_TAG } from "@/lib/provenance";
 import { validateV1Strict } from "@/lib/v1Schema";
+import { canonicalUpsertBatch } from "@/lib/canonicalMutation";
 
 const V1 = "adaptive-homelab-atlas/v1";
 
@@ -87,7 +88,7 @@ export function detectFormat(envelope) {
   return envelope && Array.isArray(envelope.entities) ? "unified" : "section";
 }
 
-const emptyReport = () => ({ created: [], updated: [], unchanged: [], failed: [], unresolved: [], conflicts: [], warnings: [], ambiguous: [], relationships: [], capability_findings: [], dependencies_created: [], dependencies_updated: [], dependencies_deleted: [], blocked: false, blockedReasons: [], sync_state: "", partial: false });
+const emptyReport = () => ({ created: [], updated: [], unchanged: [], failed: [], unresolved: [], conflicts: [], warnings: [], ambiguous: [], relationships: [], capability_findings: [], dependencies_created: [], dependencies_updated: [], dependencies_deleted: [], blocked: false, blockedReasons: [], sync_state: "", partial: false, recovery_required: false });
 const countReport = (r) => ({
   created: r.created.length, updated: r.updated.length, unchanged: r.unchanged.length,
   failed: r.failed.length, unresolved: r.unresolved.length, conflicts: r.conflicts.length,
@@ -811,27 +812,76 @@ export async function runImport(envelope, data, options = {}) {
 
   const meta = buildMeta(envelope);
 
-  // ---- Phase 1: upsert scalar fields by canonical_id ----
+  // ---- Phase 1: upsert scalar fields by canonical_id (canonical mutation boundary) ----
+  // Canonical creates/updates route through adapter.canonicalUpsert — the
+  // server-side mutation boundary (backend function) or in-memory equivalent.
+  // The browser does NOT call entity.create directly for canonical entities.
+  // Post-create uniqueness verification detects cross-session races; ambiguous
+  // existing identity blocks before mutation.
   const items = plan.plans;
   const recordByItem = new Map();
   let partialFailure = false;
   for (const item of items) {
-    const { entity, incoming, canonical_id, existing, action } = item;
-    if (action === "unchanged") { recordByItem.set(item, existing); report.unchanged.push({ entity, canonical_id }); continue; }
-    const payload = buildScalarPayload(item, meta);
+    if (item.action === "unchanged") {
+      recordByItem.set(item, item.existing);
+      report.unchanged.push({ entity: item.entity, canonical_id: item.canonical_id });
+    }
+  }
+  const upsertOps = items
+    .filter((item) => item.action !== "unchanged")
+    .map((item) => ({ item, entity: item.entity, canonical_id: item.canonical_id, payload: buildScalarPayload(item, meta) }));
+
+  if (upsertOps.length > 0) {
+    let upsertResult = null;
     try {
-      if (existing) {
-        const updated = await adapter.update(entity, existing.id, payload);
-        report.updated.push({ entity, canonical_id });
-        recordByItem.set(item, updated || { ...existing, ...payload, id: existing.id });
-      } else {
-        const created = await adapter.create(entity, payload);
-        report.created.push({ entity, canonical_id });
-        recordByItem.set(item, created);
-      }
+      upsertResult = await adapter.canonicalUpsert(
+        upsertOps.map((o) => ({ entity: o.entity, canonical_id: o.canonical_id, payload: o.payload }))
+      );
     } catch (e) {
-      report.failed.push({ entity, canonical_id, reason: e.message });
+      upsertOps.forEach((o) => {
+        report.failed.push({ entity: o.entity, canonical_id: o.canonical_id, reason: `canonical mutation boundary error: ${e.message}` });
+      });
       partialFailure = true;
+    }
+    if (upsertResult) {
+      const resultByCid = new Map(upsertResult.results.map((r) => [r.canonical_id, r]));
+      for (const o of upsertOps) {
+        const r = resultByCid.get(o.canonical_id);
+        if (!r) {
+          report.failed.push({ entity: o.entity, canonical_id: o.canonical_id, reason: "no result from canonical mutation boundary" });
+          partialFailure = true;
+          continue;
+        }
+        if (r.status === "created") {
+          report.created.push({ entity: r.entity, canonical_id: r.canonical_id });
+          recordByItem.set(o.item, { ...o.payload, id: r.id });
+        } else if (r.status === "updated") {
+          report.updated.push({ entity: r.entity, canonical_id: r.canonical_id });
+          recordByItem.set(o.item, { ...o.payload, id: r.id });
+        } else if (r.status === "canonical_identity_race_detected") {
+          report.failed.push({ entity: r.entity, canonical_id: r.canonical_id, reason: `canonical identity race detected: ${r.count} records after create` });
+          partialFailure = true;
+          report.recovery_required = true;
+          if (r.id) recordByItem.set(o.item, { ...o.payload, id: r.id });
+        } else if (r.status === "ambiguous_existing_canonical_identity") {
+          report.ambiguous.push({ type: "existing_identity_ambiguous", entity: r.entity, canonical_id: r.canonical_id, count: r.count, reason: `${r.count} existing records share canonical_id at mutation boundary` });
+          partialFailure = true;
+          report.recovery_required = true;
+        } else if (r.status === "mutation_error") {
+          report.failed.push({ entity: r.entity, canonical_id: r.canonical_id, reason: `mutation error: ${r.error}` });
+          partialFailure = true;
+        }
+      }
+      // Post-write uniqueness verification
+      if (upsertResult.verification) {
+        for (const v of upsertResult.verification) {
+          if (!v.unique) {
+            report.warnings.push({ entity: v.entity, canonical_id: v.canonical_id, note: `post-write uniqueness check failed: ${v.count} records exist` });
+            partialFailure = true;
+            report.recovery_required = true;
+          }
+        }
+      }
     }
   }
 
@@ -1023,7 +1073,7 @@ export async function runImport(envelope, data, options = {}) {
 }
 
 function computeSyncState(report, fresh, partialFailure) {
-  if (partialFailure) return "partial_failure";
+  if (report.recovery_required || partialFailure) return "partial_failure";
   if (report.blocked) return "import_blocked";
   if (report.unresolved.length || report.conflicts.length || report.failed.length || report.ambiguous.length) return "import_warnings";
   const atlasLocalCount = ENTITY_KINDS.reduce((s, k) => s + (fresh[k] || []).filter((r) => !r.canonical_id).length, 0);
@@ -1062,6 +1112,10 @@ export function createBase44Adapter(client = base44) {
       }
       return res.records;
     },
+    async canonicalUpsert(operations) {
+      const res = await client.functions.invoke("canonicalMutation", { operations });
+      return res.data;
+    },
     async create(entity, payload) { return await client.entities[entity].create(payload); },
     async update(entity, id, payload) { return await client.entities[entity].update(id, payload); },
     async bulkUpdate(entity, updates) { return await client.entities[entity].bulkUpdate(updates); },
@@ -1083,19 +1137,31 @@ export function createMemoryAdapter(initial = {}) {
   });
   let counter = 0;
   const newId = () => `mem-${++counter}`;
+  const doCreate = async (entity, payload) => {
+    const id = newId(); const now = new Date().toISOString();
+    const rec = { ...payload, id, created_date: now, updated_date: now, created_by_id: "mem" };
+    store[entity].set(id, rec); return { ...rec };
+  };
+  const doUpdate = async (entity, id, payload) => {
+    const ex = store[entity].get(id);
+    if (!ex) throw new Error(`update: ${entity} ${id} not found`);
+    const rec = { ...ex, ...payload, updated_date: new Date().toISOString() };
+    store[entity].set(id, rec); return { ...rec };
+  };
+  const filterByCid = async (entity, cid) => {
+    return Array.from((store[entity] || new Map()).values()).filter((r) => r.canonical_id === cid).map((r) => ({ ...r }));
+  };
   return {
     name: "memory",
     async listAll(entity) { return Array.from((store[entity] || new Map()).values()).map((r) => ({ ...r })); },
-    async create(entity, payload) {
-      const id = newId(); const now = new Date().toISOString();
-      const rec = { ...payload, id, created_date: now, updated_date: now, created_by_id: "mem" };
-      store[entity].set(id, rec); return { ...rec };
-    },
-    async update(entity, id, payload) {
-      const ex = store[entity].get(id);
-      if (!ex) throw new Error(`update: ${entity} ${id} not found`);
-      const rec = { ...ex, ...payload, updated_date: new Date().toISOString() };
-      store[entity].set(id, rec); return { ...rec };
+    async create(entity, payload) { return doCreate(entity, payload); },
+    async update(entity, id, payload) { return doUpdate(entity, id, payload); },
+    async canonicalUpsert(operations) {
+      return canonicalUpsertBatch(operations, {
+        filterByCanonicalId: filterByCid,
+        create: (e, p) => this.create(e, p),
+        update: (e, id, p) => this.update(e, id, p),
+      });
     },
     async bulkUpdate(entity, updates) {
       updates.forEach((u) => {

@@ -6,9 +6,11 @@ import MaintenanceList from "@/components/MaintenanceList";
 import { fmtGB, lifecycleTone, StatusBadge, refName } from "@/lib/homelab";
 import ObjectFindings from "@/components/ObjectFindings";
 import ProvenanceSection from "@/components/ProvenanceSection";
+import IdentityBadge from "@/components/IdentityBadge";
 
 const COLUMNS = [
   { key: "name", label: "Name", className: "font-medium" },
+  { key: "source_kind", label: "Origin", render: (r) => <IdentityBadge record={r} /> },
   { key: "type", label: "Type", render: (r) => <span className="text-xs capitalize">{(r.type || "").replace(/_/g, " ")}</span> },
   { key: "current_host_name", label: "Host", render: (r) => <span className="text-xs">{r.current_host_name || "—"}</span> },
   { key: "lifecycle", label: "Lifecycle", render: (r) => <StatusBadge value={r.lifecycle} tone={lifecycleTone(r.lifecycle)} /> },
